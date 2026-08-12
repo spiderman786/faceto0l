@@ -2,36 +2,57 @@ const SOURCE_EXT = 'faceto0l-extension'
 const SOURCE_WEB = 'faceto0l-web'
 
 function post(payload) {
-  window.postMessage({ source: SOURCE_EXT, ...payload }, '*')
+  try {
+    window.postMessage({ source: SOURCE_EXT, ...payload }, '*')
+  } catch (err) {
+    console.warn('[faceto0l] postMessage failed', err)
+  }
 }
 
 function requestStatus() {
-  chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (res) => {
-    if (chrome.runtime.lastError) {
-      post({
-        type: 'STATUS',
-        ok: false,
-        extension: false,
-        error: chrome.runtime.lastError.message,
-      })
-      return
-    }
-    post({ type: 'STATUS', ...res })
-  })
+  try {
+    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (res) => {
+      if (chrome.runtime.lastError) {
+        post({
+          type: 'STATUS',
+          ok: false,
+          extension: false,
+          error: chrome.runtime.lastError.message,
+        })
+        return
+      }
+      post({ type: 'STATUS', ...(res || { ok: false, extension: true }) })
+    })
+  } catch (err) {
+    post({
+      type: 'STATUS',
+      ok: false,
+      extension: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 function relay(type, payload = {}) {
-  chrome.runtime.sendMessage({ type, ...payload }, (res) => {
-    if (chrome.runtime.lastError) {
-      post({
-        type: `${type}_RESULT`,
-        ok: false,
-        error: chrome.runtime.lastError.message,
-      })
-      return
-    }
-    post({ type: `${type}_RESULT`, ...(res || {}) })
-  })
+  try {
+    chrome.runtime.sendMessage({ type, ...payload }, (res) => {
+      if (chrome.runtime.lastError) {
+        post({
+          type: `${type}_RESULT`,
+          ok: false,
+          error: chrome.runtime.lastError.message,
+        })
+        return
+      }
+      post({ type: `${type}_RESULT`, ...(res || { ok: false }) })
+    })
+  } catch (err) {
+    post({
+      type: `${type}_RESULT`,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 window.addEventListener('message', (event) => {

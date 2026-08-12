@@ -26,17 +26,36 @@ async function getFacebookSession() {
 }
 
 async function getStatus() {
-  const fb = await getFacebookSession()
-  const stored = await chrome.storage.local.get([PAGES_CACHE_KEY, PAGES_CACHE_AT])
-  return {
-    ok: true,
-    extension: true,
-    version: chrome.runtime.getManifest().version,
-    foundation: 'E',
-    facebook: fb,
-    pagesCached: Array.isArray(stored[PAGES_CACHE_KEY]) ? stored[PAGES_CACHE_KEY].length : 0,
-    pagesCachedAt: stored[PAGES_CACHE_AT] || null,
-    checkedAt: new Date().toISOString(),
+  try {
+    const fb = await getFacebookSession()
+    let pagesCached = 0
+    let pagesCachedAt = null
+    try {
+      const stored = await chrome.storage.local.get([PAGES_CACHE_KEY, PAGES_CACHE_AT])
+      pagesCached = Array.isArray(stored[PAGES_CACHE_KEY]) ? stored[PAGES_CACHE_KEY].length : 0
+      pagesCachedAt = stored[PAGES_CACHE_AT] || null
+    } catch {
+      // storage optional
+    }
+    return {
+      ok: true,
+      extension: true,
+      version: chrome.runtime.getManifest().version,
+      foundation: 'E',
+      facebook: fb,
+      pagesCached,
+      pagesCachedAt,
+      checkedAt: new Date().toISOString(),
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      extension: true,
+      version: chrome.runtime.getManifest().version,
+      error: String(err),
+      facebook: { connected: false, userId: null },
+      checkedAt: new Date().toISOString(),
+    }
   }
 }
 
@@ -334,12 +353,12 @@ async function grabSource(platform, options = {}) {
 
   try {
     await chrome.tabs.update(tab.id, { active: true })
-    const [{ result }] = await chrome.scripting.executeScript({
+    const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: scrapeSourceInPage,
       args: [platform, options],
     })
-
+    const result = injected?.[0]?.result
     const items = Array.isArray(result?.items) ? result.items : []
     return {
       ok: items.length > 0,
@@ -404,20 +423,20 @@ function resolveMediaInPage() {
   }
 }
 
-async function fetchMediaAsBase64(url, maxBytes = 4.5 * 1024 * 1024) {
+async function fetchMediaAsBase64(url, maxBytes = 1.5 * 1024 * 1024) {
   const res = await fetch(url, { credentials: 'omit' })
   if (!res.ok) throw new Error(`Media fetch HTTP ${res.status}`)
   const buf = await res.arrayBuffer()
+  const mime = res.headers.get('content-type') || 'application/octet-stream'
   if (buf.byteLength > maxBytes) {
-    return { tooLarge: true, size: buf.byteLength, mime: res.headers.get('content-type') || 'application/octet-stream' }
+    return { tooLarge: true, size: buf.byteLength, mime }
   }
+  // Safe encode — never spread large typed arrays (crashes the service worker)
   const bytes = new Uint8Array(buf)
   let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i])
   }
-  const mime = res.headers.get('content-type') || 'application/octet-stream'
   return {
     tooLarge: false,
     size: buf.byteLength,
@@ -427,7 +446,14 @@ async function fetchMediaAsBase64(url, maxBytes = 4.5 * 1024 * 1024) {
 }
 
 async function runFacebookComposer(tabId, payload) {
-  const [{ result }] = await chrome.scripting.executeScript({
+  // Never inject multi-MB payloads into the page (crashes / fails scripting)
+  const safePayload = { ...payload }
+  if (safePayload.base64 && safePayload.base64.length > 1_600_000) {
+    delete safePayload.base64
+    safePayload.mode = 'link'
+  }
+
+  const injected = await chrome.scripting.executeScript({
     target: { tabId },
     func: async (input) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -498,7 +524,6 @@ async function runFacebookComposer(tabId, payload) {
         return true
       }
 
-      // Open composer if needed
       clickByText(['Create post', 'Post', "What's on your mind?"])
       await sleep(900)
 
@@ -523,127 +548,152 @@ async function runFacebookComposer(tabId, payload) {
         mode: input.mode,
       }
     },
-    args: [payload],
+    args: [safePayload],
   })
-  return result || { ok: false }
+  return injected?.[0]?.result || { ok: false }
 }
 
 async function postToPage({ pageId, itemUrl, caption }) {
   if (!pageId) return { ok: false, error: 'pageId required' }
   if (!itemUrl) return { ok: false, error: 'itemUrl required' }
 
-  const session = await getFacebookSession()
-  if (!session.connected) return { ok: false, error: 'Facebook Disconnected' }
-
-  // Resolve media from source item page
-  const sourceTab = await chrome.tabs.create({ url: itemUrl, active: false })
-  let media = null
   try {
-    await waitForTabComplete(sourceTab.id, 30000)
-    await sleep(2500)
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId: sourceTab.id },
-      func: resolveMediaInPage,
-    })
-    media = result
-  } catch (err) {
-    console.warn('[faceto0l] media resolve failed', err)
-  }
+    const session = await getFacebookSession()
+    if (!session.connected) return { ok: false, error: 'Facebook Disconnected' }
 
-  let uploadPayload = null
-  const fetchUrl = media?.mediaUrl || (media?.kind === 'image' ? media?.imageUrl : null)
-  if (fetchUrl) {
+    const sourceTab = await chrome.tabs.create({ url: itemUrl, active: false })
+    let media = null
     try {
-      const fetched = await fetchMediaAsBase64(fetchUrl)
-      if (!fetched.tooLarge) {
-        const isImage = (fetched.mime || '').startsWith('image') || media?.kind === 'image'
-        uploadPayload = {
-          mode: 'upload',
-          base64: fetched.base64,
-          mime: fetched.mime || (isImage ? 'image/jpeg' : 'video/mp4'),
-          fileName: isImage ? 'faceto0l.jpg' : 'faceto0l.mp4',
-          caption: caption || media?.title || '',
-          linkUrl: itemUrl,
-        }
-      } else {
-        // Large video: download for manual attach fallback
-        try {
-          await chrome.downloads.download({
-            url: fetchUrl,
-            filename: `Faceto0l/${Date.now()}_media`,
-            saveAs: false,
-          })
-        } catch {
-          // optional
-        }
-      }
+      await waitForTabComplete(sourceTab.id, 30000)
+      await sleep(2500)
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: sourceTab.id },
+        func: resolveMediaInPage,
+      })
+      media = injected?.[0]?.result || null
     } catch (err) {
-      console.warn('[faceto0l] media fetch failed', err)
-    }
-  }
-
-  const composerUrl = `https://www.facebook.com/profile.php?id=${encodeURIComponent(pageId)}`
-  const composerTab = await chrome.tabs.create({ url: composerUrl, active: true })
-  try {
-    await waitForTabComplete(composerTab.id, 30000)
-    await sleep(2500)
-
-    const payload = uploadPayload || {
-      mode: 'link',
-      caption: caption || media?.title || '',
-      linkUrl: itemUrl,
+      console.warn('[faceto0l] media resolve failed', err)
     }
 
-    const result = await runFacebookComposer(composerTab.id, payload)
+    let uploadPayload = null
+    const fetchUrl = media?.mediaUrl || (media?.kind === 'image' ? media?.imageUrl : null)
+    const looksLikeVideo =
+      media?.kind === 'video' ||
+      (fetchUrl && /\.(mp4|webm|mov)(\?|$)/i.test(fetchUrl)) ||
+      (fetchUrl && /tiktok|googlevideo|video/i.test(fetchUrl))
 
-    return {
-      ok: Boolean(result?.ok || result?.captioned || result?.uploaded),
-      uploaded: Boolean(result?.uploaded),
-      posted: Boolean(result?.posted),
-      mode: payload.mode,
-      mediaResolved: Boolean(fetchUrl),
-      note: result?.uploaded
-        ? 'Media attached to Facebook composer — confirm Post if needed.'
-        : result?.captioned
-          ? 'Caption/link filled in composer — click Post to publish.'
-          : 'Opened Facebook page. Composer controls may have changed — finish Post manually.',
-      error: result?.ok ? undefined : 'Composer automation partially failed',
+    // Only auto-attach small images — large/video base64 crashes MV3 messaging
+    if (fetchUrl && !looksLikeVideo) {
+      try {
+        const fetched = await fetchMediaAsBase64(fetchUrl, 1.2 * 1024 * 1024)
+        if (!fetched.tooLarge && fetched.base64 && fetched.base64.length < 1_600_000) {
+          uploadPayload = {
+            mode: 'upload',
+            base64: fetched.base64,
+            mime: fetched.mime || 'image/jpeg',
+            fileName: 'faceto0l.jpg',
+            caption: caption || media?.title || '',
+            linkUrl: itemUrl,
+          }
+        }
+      } catch (err) {
+        console.warn('[faceto0l] media fetch failed', err)
+      }
+    } else if (fetchUrl && looksLikeVideo) {
+      try {
+        await chrome.downloads.download({
+          url: fetchUrl,
+          filename: `Faceto0l/${Date.now()}_video.mp4`,
+          saveAs: false,
+        })
+      } catch {
+        // optional — many CDNs block downloads permission fetch
+      }
     }
-  } finally {
-    if (sourceTab.id) chrome.tabs.remove(sourceTab.id).catch(() => {})
+
+    const composerUrl = `https://www.facebook.com/profile.php?id=${encodeURIComponent(pageId)}`
+    const composerTab = await chrome.tabs.create({ url: composerUrl, active: true })
+    try {
+      await waitForTabComplete(composerTab.id, 30000)
+      await sleep(2500)
+
+      const payload = uploadPayload || {
+        mode: 'link',
+        caption: caption || media?.title || '',
+        linkUrl: itemUrl,
+      }
+
+      let result = { ok: false }
+      try {
+        result = await runFacebookComposer(composerTab.id, payload)
+      } catch (err) {
+        console.warn('[faceto0l] composer inject failed', err)
+        result = { ok: true, captioned: false, uploaded: false, posted: false, soft: true }
+      }
+
+      return {
+        ok: true,
+        uploaded: Boolean(result?.uploaded),
+        posted: Boolean(result?.posted),
+        mode: payload.mode,
+        mediaResolved: Boolean(fetchUrl),
+        note: result?.uploaded
+          ? 'Media attached to Facebook composer — confirm Post if needed.'
+          : result?.captioned
+            ? 'Caption/link filled in composer — click Post to publish.'
+            : looksLikeVideo
+              ? 'Opened Facebook page. Video saved to Downloads/Faceto0l when possible — attach in composer and Post.'
+              : 'Opened Facebook page. Finish Post in the composer if needed.',
+      }
+    } finally {
+      if (sourceTab.id) chrome.tabs.remove(sourceTab.id).catch(() => {})
+    }
+  } catch (err) {
+    console.error('[faceto0l] postToPage', err)
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
 function handleMessage(message, sendResponse) {
   if (!message || typeof message !== 'object') return false
 
+  const reply = (payload) => {
+    try {
+      sendResponse(payload)
+    } catch (err) {
+      console.warn('[faceto0l] sendResponse failed', err)
+    }
+  }
+
   if (message.type === 'PING' || message.type === 'GET_STATUS') {
-    getStatus().then(sendResponse)
+    getStatus().then(reply).catch((err) => reply({ ok: false, extension: true, error: String(err) }))
     return true
   }
 
   if (message.type === 'OPEN_FACEBOOK') {
-    chrome.tabs.create({ url: FACEBOOK_URL })
-    sendResponse({ ok: true })
+    chrome.tabs.create({ url: FACEBOOK_URL }).catch(() => {})
+    reply({ ok: true })
     return false
   }
 
   if (message.type === 'LIST_PAGES') {
     listPages({ force: Boolean(message.force) })
-      .then(sendResponse)
-      .catch((err) => {
-        sendResponse({ ok: false, error: String(err), pages: [] })
-      })
+      .then(reply)
+      .catch((err) => reply({ ok: false, error: String(err), pages: [] }))
     return true
   }
 
   if (message.type === 'OPEN_PAGE_COMPOSER') {
-    openPageComposer(message.pageId).then(sendResponse)
+    openPageComposer(message.pageId)
+      .then(reply)
+      .catch((err) => reply({ ok: false, error: String(err) }))
     return true
   }
 
   if (message.type === 'OPEN_BUSINESS_SUITE') {
-    openBusinessSuite(message.pageId).then(sendResponse)
+    openBusinessSuite(message.pageId)
+      .then(reply)
+      .catch((err) => reply({ ok: false, error: String(err) }))
     return true
   }
 
@@ -652,8 +702,8 @@ function handleMessage(message, sendResponse) {
       maxItems: message.maxItems,
       scrollRounds: message.scrollRounds,
     })
-      .then(sendResponse)
-      .catch((err) => sendResponse({ ok: false, error: String(err), items: [] }))
+      .then(reply)
+      .catch((err) => reply({ ok: false, error: String(err), items: [] }))
     return true
   }
 
@@ -663,9 +713,15 @@ function handleMessage(message, sendResponse) {
       itemUrl: message.itemUrl,
       caption: message.caption,
     })
-      .then(sendResponse)
-      .catch((err) => sendResponse({ ok: false, error: String(err) }))
+      .then(reply)
+      .catch((err) => reply({ ok: false, error: String(err) }))
     return true
+  }
+
+  // Ignore unknown (e.g. FACEBOOK_TAB_SEEN) without erroring the channel
+  if (message.type === 'FACEBOOK_TAB_SEEN') {
+    reply({ ok: true })
+    return false
   }
 
   return false

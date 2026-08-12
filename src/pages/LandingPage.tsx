@@ -131,7 +131,7 @@ export function LandingPage() {
                     download
                     className="mt-3 inline-block text-sm font-semibold text-[var(--brand)] underline"
                   >
-                    Download extension (v0.3.1)
+                    Download extension (v0.3.2)
                   </a>
                 ),
               },
