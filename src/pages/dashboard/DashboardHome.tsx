@@ -48,9 +48,18 @@ export function DashboardHome() {
               <div>
                 <div className="font-medium">Install the extension</div>
                 {!installed && (
-                  <a href="/extension/README.txt" className="text-xs text-sky-300 underline">
-                    Load unpacked guide
-                  </a>
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs">
+                    <a
+                      href="/extension/faceto0l-extension.zip"
+                      download
+                      className="font-semibold text-sky-300 underline"
+                    >
+                      Download extension
+                    </a>
+                    <a href="/extension/README.txt" className="text-slate-400 underline">
+                      Install steps
+                    </a>
+                  </div>
                 )}
               </div>
             </div>

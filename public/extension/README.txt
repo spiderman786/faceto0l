@@ -1,23 +1,23 @@
-Faceto0l Chrome extension — Foundation D
-========================================
+Faceto0l Chrome extension — v0.2.1
+==================================
 
-Folder to load / reload:
-  C:\Users\M-C-S\faceto0l\extension
+Download (from the website):
+  https://faceto0l.vercel.app/extension/faceto0l-extension.zip
 
-IMPORTANT: After pulling Foundation D, open chrome://extensions and click
-Reload on Faceto0l (version should show 0.2.0).
-
-Install (Chrome):
-1. chrome://extensions → Developer mode ON
-2. Load unpacked → select C:\Users\M-C-S\faceto0l\extension
-3. Open http://localhost:5173/dashboard in THIS Chrome
-4. Log into https://www.facebook.com
-5. Open any tool → click Refresh pages
-6. Select a page → Open first page (smoke test)
+Install (Chrome / Edge):
+1. Download and unzip faceto0l-extension.zip
+2. Open chrome://extensions (or edge://extensions)
+3. Turn on Developer mode
+4. Click "Load unpacked"
+5. Select the unzipped "faceto0l-extension" folder
+6. Open https://faceto0l.vercel.app/dashboard in THIS browser
+7. Log into https://www.facebook.com in the same browser
 
 Expected:
-- Header: Facebook Connected
+- Dashboard header shows Facebook Connected
 - Page picker lists your FB pages
-- Open opens that page in a new tab
+
+Local developers can also load the repo folder:
+  C:\Users\M-C-S\faceto0l\extension
 
 Grab / schedule / auto-post = Foundation E next.

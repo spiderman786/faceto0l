@@ -54,8 +54,12 @@ export function DashboardLayout() {
         {!installed && (
           <div className="border-b border-blue-100 bg-blue-50 px-3 py-3 text-xs text-blue-900">
             Extension not installed.{' '}
-            <a className="font-semibold underline" href="/extension/README.txt">
-              Install guide
+            <a className="font-semibold underline" href="/extension/faceto0l-extension.zip" download>
+              Download
+            </a>
+            {' · '}
+            <a className="underline" href="/extension/README.txt">
+              Install steps
             </a>
           </div>
         )}
@@ -187,10 +191,11 @@ export function DashboardLayout() {
               </button>
             )}
             <a
-              href="/extension/README.txt"
+              href="/extension/faceto0l-extension.zip"
+              download
               className="rounded-full bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white"
             >
-              Extension setup
+              Download extension
             </a>
           </div>
         </header>

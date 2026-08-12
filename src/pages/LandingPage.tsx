@@ -85,15 +85,22 @@ export function LandingPage() {
               </Link>
               <a
                 className="rounded-full border border-[var(--line)] bg-white px-6 py-3 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--brand)]"
-                href="/extension/README.txt"
+                href="/extension/faceto0l-extension.zip"
+                download
               >
-                Extension placeholder
+                Download extension
               </a>
             </div>
+            <p className="mt-3 text-xs text-[var(--muted)]">
+              Unzip → chrome://extensions → Developer mode → Load unpacked.{' '}
+              <a className="underline" href="/extension/README.txt">
+                Install steps
+              </a>
+            </p>
 
             <div className="mt-10 grid gap-3 text-left sm:grid-cols-3">
               {[
-                ['Install extension', 'Sideload Chrome MV3 (Foundation C)'],
+                ['Install extension', 'Download ZIP → Load unpacked in Chrome'],
                 ['Connect Facebook', 'Same-browser session detect'],
                 ['Start scheduling', 'Grab → thumbnails → bulk schedule'],
               ].map(([title, body]) => (

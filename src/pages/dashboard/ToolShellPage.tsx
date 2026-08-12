@@ -51,8 +51,12 @@ export function ToolShellPage() {
           {!installed ? (
             <>
               Install the extension first.{' '}
-              <a className="font-semibold underline" href="/extension/README.txt">
-                Guide
+              <a className="font-semibold underline" href="/extension/faceto0l-extension.zip" download>
+                Download
+              </a>
+              {' · '}
+              <a className="underline" href="/extension/README.txt">
+                Steps
               </a>
             </>
           ) : (
