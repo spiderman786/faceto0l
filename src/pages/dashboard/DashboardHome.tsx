@@ -101,8 +101,9 @@ export function DashboardHome() {
         </p>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 text-sm text-amber-950">
-        Free plan active — Grab → thumbs → Interval/Daily Window is live (Foundation E). Keep Chrome open while schedules run.
+      <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+        We don&apos;t store cookies or session data. Prefer a dedicated Chrome profile. Grab → thumbs →
+        Interval / Daily Window is ready on all four tools.
       </div>
 
       {/* Activity strip like FaceBot */}

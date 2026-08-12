@@ -19,6 +19,13 @@ const GRAB_LABEL: Record<string, string> = {
   bulk: 'Grab',
 }
 
+const PITCH: Record<string, string> = {
+  'tiktok-fb': 'Grab all videos from a TikTok profile and schedule them to your Facebook pages.',
+  'instagram-fb': 'Grab Instagram posts (photo / video / carousel) and schedule them to your pages.',
+  'youtube-fb': 'Grab or paste YouTube videos and schedule them to your Facebook pages.',
+  'bulk-scheduler': 'Paste mixed links and schedule across pages with Interval or Daily Window.',
+}
+
 export function ToolShellPage() {
   const { toolId } = useParams()
   const tool = TOOLS.find((t) => t.id === toolId)
@@ -43,17 +50,17 @@ export function ToolShellPage() {
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-[var(--brand)]">{tool.category}</div>
         <h1 className="brand-font mt-2 text-3xl font-bold tracking-tight">{tool.name}</h1>
-        <p className="mt-2 text-[var(--muted)]">{tool.description}</p>
+        <p className="mt-2 text-[var(--muted)]">{PITCH[tool.id] || tool.description}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
               connected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
             }`}
           >
-            {connected ? 'Facebook Connected' : installed ? 'Facebook Disconnected' : 'Extension required'}
+            {connected ? 'Facebook Connected' : installed ? 'Facebook Disconnected' : 'Extension Not Connected'}
           </span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            Foundation E · Grab + Schedule
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+            100% remaining
           </span>
           {selectedIds.length > 0 && (
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
@@ -67,13 +74,13 @@ export function ToolShellPage() {
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           {!installed ? (
             <>
-              Install the extension first.{' '}
+              Extension Not Connected.{' '}
               <a className="font-semibold underline" href="/extension/faceto0l-extension.zip" download>
-                Download
+                Download extension
               </a>
               {' · '}
               <a className="underline" href="/extension/README.txt">
-                Steps
+                Install steps
               </a>
             </>
           ) : (

@@ -24,10 +24,10 @@ export function PagePicker() {
     <div className="rounded-2xl border border-[var(--line)] bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="brand-font text-lg font-semibold">Select Pages</h2>
+          <h2 className="brand-font text-lg font-semibold">Select which pages</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            Loaded from your Facebook session via the Faceto0l extension
-            {source ? ` · source: ${source}` : ''}
+            Loaded from your Facebook session — nothing stored on our servers
+            {source ? ` · ${source}` : ''}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -132,14 +132,14 @@ export function PagePicker() {
             onClick={() => openPageComposer(selectedIds[0])}
             className="rounded-full bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white"
           >
-            Open first page (smoke test)
+            Open page
           </button>
           <button
             type="button"
             onClick={() => openBusinessSuite(selectedIds[0])}
             className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-semibold"
           >
-            Open Business Suite
+            Business Suite
           </button>
         </div>
       )}

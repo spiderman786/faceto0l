@@ -8,6 +8,7 @@ export type ScheduleConfig = {
   dailyStart: string
   dailyGapMinutes: number
   delaySeconds: number
+  keepOriginalCaption: boolean
 }
 
 export const DEFAULT_SCHEDULE: ScheduleConfig = {
@@ -18,6 +19,19 @@ export const DEFAULT_SCHEDULE: ScheduleConfig = {
   dailyStart: '09:00',
   dailyGapMinutes: 60,
   delaySeconds: 45,
+  keepOriginalCaption: true,
+}
+
+export const DELAY_PRESETS = [
+  { label: '30s', value: 30 },
+  { label: '45s', value: 45 },
+  { label: '60s', value: 60 },
+  { label: 'Random', value: -1 },
+] as const
+
+export function resolveDelaySeconds(cfg: ScheduleConfig) {
+  if (cfg.delaySeconds < 0) return 30 + Math.floor(Math.random() * 61)
+  return Math.max(0, cfg.delaySeconds)
 }
 
 function intervalMs(cfg: ScheduleConfig) {
@@ -40,7 +54,7 @@ function parseDailyStart(hhmm: string, from = new Date()) {
 export function previewScheduleTimes(cfg: ScheduleConfig, count: number, from = new Date()): Date[] {
   const n = Math.max(0, count)
   if (!n) return []
-  const delay = Math.max(0, cfg.delaySeconds) * 1000
+  const delay = Math.max(0, cfg.delaySeconds < 0 ? 45 : cfg.delaySeconds) * 1000
   const times: Date[] = []
 
   if (cfg.mode === 'interval') {

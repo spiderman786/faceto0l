@@ -9,9 +9,11 @@ import {
 import { usePages } from '../lib/pages'
 import {
   DEFAULT_SCHEDULE,
+  DELAY_PRESETS,
   loadHistory,
   parseManualLinks,
   previewScheduleTimes,
+  resolveDelaySeconds,
   saveHistory,
   type HistoryEntry,
   type ScheduleConfig,
@@ -25,19 +27,43 @@ type Props = {
 }
 
 type QueueItem = GrabItem & { selected: boolean }
+type ActivityLine = { at: string; text: string }
+
+const FAQ: { q: string; a: string }[] = [
+  {
+    q: 'How does Grab work?',
+    a: 'Open a TikTok / Instagram / YouTube profile in another tab, then click Grab. The extension scrolls that tab, collects posts, and drops them here with thumbnail previews. You can Stop anytime.',
+  },
+  {
+    q: 'What scheduling options are available?',
+    a: 'Interval — every X minutes/hours/days. Daily Window — N posts per day starting at a time with a gap between posts. Preview times show before you start.',
+  },
+  {
+    q: 'Can I keep the original caption?',
+    a: 'Yes. Toggle “Keep original caption” on. When off, only the source link is used as caption text.',
+  },
+  {
+    q: 'Where is Posted History stored?',
+    a: 'In this browser only (localStorage). We do not store your Facebook session or post history on our servers.',
+  },
+]
 
 export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
   const { connected, installed } = useExtensionStatus()
   const { selectedIds, pages } = usePages()
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [paste, setPaste] = useState('')
+  const [showPaste, setShowPaste] = useState(false)
   const [grabbing, setGrabbing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [cfg, setCfg] = useState<ScheduleConfig>(DEFAULT_SCHEDULE)
   const [running, setRunning] = useState(false)
+  const [faqOpen, setFaqOpen] = useState<string | null>(null)
+  const [activity, setActivity] = useState<ActivityLine[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory(toolId))
   const runRef = useRef(false)
+  const grabAbortRef = useRef(false)
   const timersRef = useRef<number[]>([])
 
   useEffect(() => {
@@ -45,10 +71,20 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
   }, [toolId])
 
   const selectedQueue = useMemo(() => queue.filter((q) => q.selected), [queue])
-  const previewTimes = useMemo(
-    () => previewScheduleTimes(cfg, selectedQueue.length),
-    [cfg, selectedQueue.length],
+  const previewCfg = useMemo(
+    () => ({ ...cfg, delaySeconds: cfg.delaySeconds < 0 ? 45 : cfg.delaySeconds }),
+    [cfg],
   )
+  const previewTimes = useMemo(
+    () => previewScheduleTimes(previewCfg, selectedQueue.length),
+    [previewCfg, selectedQueue.length],
+  )
+
+  const canGrab = installed && connected && platform !== 'bulk' && !running
+
+  function log(text: string) {
+    setActivity((prev) => [{ at: new Date().toLocaleTimeString(), text }, ...prev].slice(0, 40))
+  }
 
   function mergeItems(items: GrabItem[]) {
     setQueue((prev) => {
@@ -65,33 +101,54 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
       setError('Bulk Scheduler uses Paste links — or grab from TikTok / Instagram / YouTube tools.')
       return
     }
+    if (!connected) {
+      setError('Extension Not Connected — install Faceto0l and log into Facebook first.')
+      return
+    }
     setError(null)
     setInfo(null)
     setGrabbing(true)
+    grabAbortRef.current = false
+    log(`Grab started (${platform})…`)
     try {
       const res = await grabSource(platform, { maxItems: 40, scrollRounds: 10 })
+      if (grabAbortRef.current) {
+        setInfo('Grab stopped.')
+        log('Grab stopped by user')
+        return
+      }
       if (!res.ok && !res.items?.length) {
         setError(res.error || 'Grab failed')
+        log(res.error || 'Grab failed')
         return
       }
       mergeItems(res.items || [])
-      setInfo(
-        `Grabbed ${res.items?.length || 0} item(s)${res.profile ? ` from ${res.profile}` : ''}.`,
-      )
+      const msg = `Grabbed ${res.items?.length || 0} item(s)${res.profile ? ` from ${res.profile}` : ''}.`
+      setInfo(msg)
+      log(msg)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      log(msg)
     } finally {
       setGrabbing(false)
     }
+  }
+
+  function stopGrab() {
+    grabAbortRef.current = true
+    setGrabbing(false)
+    setInfo('Stopping grab…')
   }
 
   function onPasteAdd() {
     const source = platform === 'bulk' ? 'bulk' : platform
     const items = parseManualLinks(paste, source).map((x) => ({
       ...x,
-      thumb: x.platform === 'youtube' && x.id.startsWith('yt_')
-        ? `https://i.ytimg.com/vi/${x.id.slice(3)}/hqdefault.jpg`
-        : null,
+      thumb:
+        x.platform === 'youtube' && x.id.startsWith('yt_')
+          ? `https://i.ytimg.com/vi/${x.id.slice(3)}/hqdefault.jpg`
+          : null,
       caption: '',
     }))
     if (!items.length) {
@@ -102,6 +159,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
     setPaste('')
     setInfo(`Added ${items.length} link(s).`)
     setError(null)
+    log(`Added ${items.length} pasted link(s)`)
   }
 
   function stopRun() {
@@ -109,6 +167,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
     setRunning(false)
     for (const id of timersRef.current) window.clearTimeout(id)
     timersRef.current = []
+    log('Schedule stopped')
   }
 
   function appendHistory(entry: HistoryEntry) {
@@ -129,7 +188,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
       return
     }
     if (!connected) {
-      setError('Extension + Facebook must be connected')
+      setError('Extension Not Connected — Facebook must be connected')
       return
     }
 
@@ -137,9 +196,11 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
     runRef.current = true
     setRunning(true)
     setError(null)
+    const runCfg = { ...cfg, delaySeconds: resolveDelaySeconds(cfg) }
     setInfo(`Schedule started — ${selectedQueue.length} item(s). Keep this tab open.`)
+    log(`Schedule started · ${cfg.mode} · ${selectedQueue.length} items`)
 
-    const times = previewScheduleTimes(cfg, selectedQueue.length)
+    const times = previewScheduleTimes(runCfg, selectedQueue.length)
     const pageCycle = [...selectedIds]
 
     selectedQueue.forEach((item, index) => {
@@ -151,10 +212,13 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
       const timer = window.setTimeout(async () => {
         if (!runRef.current) return
         try {
+          const caption = cfg.keepOriginalCaption
+            ? item.caption || item.url
+            : item.url
           const res = await preparePost({
             pageId,
             itemUrl: item.url,
-            caption: item.caption || item.url,
+            caption,
           })
           const status = res.uploaded || res.posted ? 'done' : res.ok ? 'opened' : 'failed'
           appendHistory({
@@ -170,12 +234,13 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             note: res.note || res.error,
             toolId,
           })
-          setInfo(
-            res.ok
-              ? `${res.note || 'Posted'} (${index + 1}/${selectedQueue.length}) → ${pageName || pageId}`
-              : res.error || 'Post failed',
-          )
+          const line = res.ok
+            ? `${res.note || 'Posted'} (${index + 1}/${selectedQueue.length}) → ${pageName || pageId}`
+            : res.error || 'Post failed'
+          setInfo(line)
+          log(line)
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
           appendHistory({
             id: `${Date.now()}_${item.id}`,
             itemId: item.id,
@@ -185,15 +250,17 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             pageName,
             scheduledAt: when.toISOString(),
             status: 'failed',
-            note: err instanceof Error ? err.message : String(err),
+            note: msg,
             toolId,
           })
+          log(msg)
         }
 
         if (index === selectedQueue.length - 1) {
           runRef.current = false
           setRunning(false)
           setInfo('Schedule finished.')
+          log('Schedule finished')
         }
       }, delay)
 
@@ -203,23 +270,43 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+          100% remaining
+        </span>
+        <span className="text-xs text-[var(--muted)]">
+          Posted History · this browser only · {history.length} entries
+        </span>
+      </div>
+
       <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="brand-font text-xl font-semibold">{title}</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Open a source profile tab → Grab (or paste links) → items land here with thumbs → schedule.
+              Open a source profile tab → <strong>{grabLabel}</strong> → items auto-land with thumbs →
+              select → schedule.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {platform !== 'bulk' && (
+            {platform !== 'bulk' && !grabbing && (
               <button
                 type="button"
-                disabled={!installed || grabbing || running}
+                disabled={!canGrab}
                 onClick={onGrab}
+                title={!connected ? 'Extension Not Connected' : undefined}
                 className="rounded-full bg-[var(--brand)] px-5 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300"
               >
-                {grabbing ? 'Grabbing…' : grabLabel}
+                {grabLabel}
+              </button>
+            )}
+            {grabbing && (
+              <button
+                type="button"
+                onClick={stopGrab}
+                className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white"
+              >
+                Stop grab
               </button>
             )}
             <button
@@ -241,10 +328,21 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
           </div>
         </div>
 
-        <div className="mt-4">
-          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-            Paste links manually
-          </label>
+        {!connected && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            <strong>Extension Not Connected</strong> — Grab is disabled until the Faceto0l extension is
+            installed and Facebook is logged in this Chrome.
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowPaste((v) => !v)}
+          className="mt-4 text-sm font-semibold text-[var(--brand)] underline"
+        >
+          {showPaste ? 'Hide paste links' : 'Paste links manually'}
+        </button>
+        {showPaste && (
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
             <textarea
               value={paste}
@@ -261,7 +359,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
               Add links
             </button>
           </div>
-        </div>
+        )}
 
         {error && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
@@ -277,7 +375,9 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {queue.length === 0 ? (
             <div className="col-span-full grid place-items-center rounded-2xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-4 py-14 text-center">
-              <p className="text-sm text-[var(--muted)]">Queue empty — grab or paste links</p>
+              <p className="text-sm text-[var(--muted)]">
+                Queue empty — open a profile tab and {grabLabel.toLowerCase()}, or paste links
+              </p>
             </div>
           ) : (
             queue.map((item) => (
@@ -301,7 +401,9 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
                       checked={item.selected}
                       onChange={(e) =>
                         setQueue((prev) =>
-                          prev.map((q) => (q.id === item.id ? { ...q, selected: e.target.checked } : q)),
+                          prev.map((q) =>
+                            q.id === item.id ? { ...q, selected: e.target.checked } : q,
+                          ),
                         )
                       }
                     />
@@ -328,7 +430,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
       <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
         <h2 className="brand-font text-xl font-semibold">Schedule</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Interval or Daily Window — same FaceBot-style modes. Browser must stay open while running.
+          Interval or Daily Window. Browser must stay open while the run is active.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -421,19 +523,34 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
           </div>
         )}
 
-        <label className="mt-4 block text-sm">
-          <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">
-            Delay before first open (seconds)
-          </span>
+        <div className="mt-4">
+          <div className="mb-1 text-xs font-semibold text-[var(--muted)]">Delay before first post</div>
+          <div className="flex flex-wrap gap-2">
+            {DELAY_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setCfg((c) => ({ ...c, delaySeconds: p.value }))}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  cfg.delaySeconds === p.value
+                    ? 'bg-[var(--brand)] text-white'
+                    : 'border border-[var(--line)]'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="mt-4 flex items-center gap-2 text-sm">
           <input
-            type="number"
-            min={0}
-            value={cfg.delaySeconds}
-            onChange={(e) =>
-              setCfg((c) => ({ ...c, delaySeconds: Math.max(0, Number(e.target.value) || 0) }))
-            }
-            className="w-28 rounded-xl border border-[var(--line)] px-3 py-2"
+            type="checkbox"
+            checked={cfg.keepOriginalCaption}
+            onChange={(e) => setCfg((c) => ({ ...c, keepOriginalCaption: e.target.checked }))}
+            className="accent-[var(--brand)]"
           />
+          Keep original caption
         </label>
 
         {previewTimes.length > 0 && (
@@ -441,9 +558,10 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             <div className="font-semibold text-[var(--ink)]">Preview publish times</div>
             <ul className="mt-2 space-y-1">
               {previewTimes.slice(0, 8).map((t, i) => (
-                <li key={t.toISOString()}>
+                <li key={`${t.toISOString()}-${i}`}>
                   #{i + 1} · {t.toLocaleString()} · page{' '}
-                  {pages.find((p) => p.id === selectedIds[i % Math.max(selectedIds.length, 1)])?.name ||
+                  {pages.find((p) => p.id === selectedIds[i % Math.max(selectedIds.length, 1)])
+                    ?.name ||
                     selectedIds[i % Math.max(selectedIds.length, 1)] ||
                     '—'}
                 </li>
@@ -473,41 +591,78 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             </button>
           )}
         </div>
-        <p className="mt-3 text-xs text-[var(--muted)]">
-          Each slot resolves media when possible, opens the Facebook page composer, attaches the file or
-          pastes caption/link, and tries Post. Keep this tab open. Confirm Post if Facebook asks.
-        </p>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
+          <h2 className="brand-font text-xl font-semibold">Activity</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Live log for this session</p>
+          {activity.length === 0 ? (
+            <p className="mt-4 text-sm text-[var(--muted)]">No activity yet.</p>
+          ) : (
+            <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto text-sm">
+              {activity.map((line, i) => (
+                <li key={`${line.at}-${i}`} className="rounded-lg bg-[var(--surface)] px-3 py-2">
+                  <span className="text-xs text-[var(--muted)]">{line.at}</span>
+                  <div>{line.text}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
+          <h2 className="brand-font text-xl font-semibold">Posted History</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">Stored in this browser only.</p>
+          {history.length === 0 ? (
+            <p className="mt-4 text-sm text-[var(--muted)]">No history yet.</p>
+          ) : (
+            <ul className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+              {history.slice(0, 20).map((h) => (
+                <li
+                  key={h.id}
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line)] px-3 py-2 text-sm"
+                >
+                  {h.thumb ? (
+                    <img src={h.thumb} alt="" className="h-10 w-10 rounded object-cover" />
+                  ) : (
+                    <div className="grid h-10 w-10 place-items-center rounded bg-slate-100 text-[10px]">
+                      —
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{h.caption || h.url}</div>
+                    <div className="text-xs text-[var(--muted)]">
+                      {h.status} · {new Date(h.scheduledAt).toLocaleString()} · {h.pageName || h.pageId}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
-        <h2 className="brand-font text-xl font-semibold">Posted History</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Stored in this browser only.</p>
-        {history.length === 0 ? (
-          <p className="mt-4 text-sm text-[var(--muted)]">No history yet.</p>
-        ) : (
-          <ul className="mt-4 space-y-2">
-            {history.slice(0, 20).map((h) => (
-              <li
-                key={h.id}
-                className="flex items-center gap-3 rounded-xl border border-[var(--line)] px-3 py-2 text-sm"
-              >
-                {h.thumb ? (
-                  <img src={h.thumb} alt="" className="h-10 w-10 rounded object-cover" />
-                ) : (
-                  <div className="grid h-10 w-10 place-items-center rounded bg-slate-100 text-[10px]">
-                    —
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{h.caption || h.url}</div>
-                  <div className="text-xs text-[var(--muted)]">
-                    {h.status} · {new Date(h.scheduledAt).toLocaleString()} · {h.pageName || h.pageId}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2 className="brand-font text-xl font-semibold">About this tool</h2>
+        <div className="mt-3 space-y-2">
+          {FAQ.map((item) => {
+            const open = faqOpen === item.q
+            return (
+              <div key={item.q} className="rounded-xl border border-[var(--line)]">
+                <button
+                  type="button"
+                  onClick={() => setFaqOpen(open ? null : item.q)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold"
+                >
+                  {item.q}
+                  <span className="text-[var(--muted)]">{open ? '−' : '+'}</span>
+                </button>
+                {open && <p className="border-t border-[var(--line)] px-4 py-3 text-sm text-[var(--muted)]">{item.a}</p>}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
