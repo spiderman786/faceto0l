@@ -5,22 +5,31 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const zip = path.join(root, 'public', 'extension', 'faceto0l-extension.zip')
-const staging = path.join(process.env.TEMP || '/tmp', 'faceto0l-ext-pack')
-const folder = path.join(staging, 'faceto0l-extension')
+const staging = path.join(process.env.TEMP || '/tmp', 'faceto0l-ext-flat')
+const src = path.join(root, 'extension')
 
 fs.rmSync(staging, { recursive: true, force: true })
-fs.mkdirSync(folder, { recursive: true })
+fs.mkdirSync(staging, { recursive: true })
 fs.mkdirSync(path.dirname(zip), { recursive: true })
 
-for (const f of fs.readdirSync(path.join(root, 'extension'))) {
-  fs.copyFileSync(path.join(root, 'extension', f), path.join(folder, f))
+// Flat pack: manifest.json at zip root so Load unpacked works after Windows unzip
+for (const f of fs.readdirSync(src)) {
+  const from = path.join(src, f)
+  if (fs.statSync(from).isFile()) {
+    fs.copyFileSync(from, path.join(staging, f))
+  }
 }
 
 if (fs.existsSync(zip)) fs.unlinkSync(zip)
 
+// Compress staging/* into zip (files at root of archive)
 execFileSync(
   'powershell',
-  ['-NoProfile', '-Command', `Compress-Archive -Path '${folder}' -DestinationPath '${zip}' -Force`],
+  [
+    '-NoProfile',
+    '-Command',
+    `Compress-Archive -Path '${staging}\\*' -DestinationPath '${zip}' -Force`,
+  ],
   { stdio: 'inherit' },
 )
 

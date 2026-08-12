@@ -4,19 +4,20 @@ Faceto0l Chrome extension — v0.3.2
 Download:
   https://faceto0l.vercel.app/extension/faceto0l-extension.zip
 
-Fix in 0.3.2:
-- Service worker crash when encoding large videos (Fixed)
-- Safer post/composer path (images attach; videos open composer + link)
-- Status/ping no longer fails the whole extension
+IMPORTANT — how to Load unpacked (fixes "Manifest file is missing"):
+1. Download the zip
+2. Right-click zip → Extract All…
+3. Open the extracted folder — you must SEE manifest.json inside it
+4. chrome://extensions → Developer mode ON → Load unpacked
+5. Select THAT folder (the one that contains manifest.json)
 
-Install / update:
-1. chrome://extensions → Remove old Faceto0l
-2. Download + unzip this zip
-3. Load unpacked → select faceto0l-extension folder
-4. Version must show 0.3.2
-5. Open https://faceto0l.vercel.app/dashboard and hard-refresh (Ctrl+Shift+R)
+WRONG: selecting Downloads, or a parent folder that only contains another folder
+RIGHT: the folder that directly contains manifest.json, background.js, popup.html
 
-Check it works:
-- Extension popup shows Facebook Connected (after FB login)
-- Dashboard header shows Facebook Connected
-- Grab on an open TikTok profile tab fills thumbnails
+If extract created nested folders, keep opening until you see manifest.json, then Load that.
+
+Local developers can Load unpacked this path directly:
+  C:\Users\M-C-S\faceto0l\extension
+
+After install, version must show 0.3.2.
+Then hard-refresh https://faceto0l.vercel.app/dashboard
