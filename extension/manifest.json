@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Faceto0l",
+  "description": "Session bridge for Faceto0l — detects Facebook login and powers grab/schedule tools.",
+  "version": "0.2.1",
+  "permissions": ["cookies", "tabs", "storage", "scripting"],
+  "host_permissions": [
+    "*://*.facebook.com/*",
+    "*://business.facebook.com/*",
+    "*://*.instagram.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.youtube.com/*",
+    "http://localhost:5173/*",
+    "http://127.0.0.1:5173/*",
+    "https://*.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["content-web.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.facebook.com/*", "*://business.facebook.com/*"],
+      "js": ["content-facebook.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "https://*.vercel.app/*"
+    ]
+  },
+  "action": {
+    "default_title": "Faceto0l",
+    "default_popup": "popup.html"
+  }
+}

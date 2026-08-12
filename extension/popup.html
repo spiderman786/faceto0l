@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Faceto0l</title>
+    <style>
+      body {
+        margin: 0;
+        font: 13px/1.4 system-ui, sans-serif;
+        color: #0b1220;
+        width: 260px;
+        padding: 14px;
+        background: #fff;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .ok {
+        background: #ecfdf5;
+        color: #047857;
+      }
+      .bad {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+      button {
+        margin-top: 10px;
+        width: 100%;
+        border: 0;
+        border-radius: 999px;
+        background: #1a6dff;
+        color: #fff;
+        font-weight: 600;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      p {
+        margin: 8px 0 0;
+        color: #5b6577;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Faceto0l</h1>
+    <div id="status" class="pill bad">Checking…</div>
+    <p id="detail">Open the Faceto0l dashboard after Facebook login.</p>
+    <button id="openFb" type="button">Open Facebook</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

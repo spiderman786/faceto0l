@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Sora:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+:root {
+  --brand: #1a6dff;
+  --brand-dark: #0b4fd0;
+  --ink: #0b1220;
+  --muted: #5b6577;
+  --surface: #f4f7fb;
+  --line: #d9e2ef;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: 'Sora', sans-serif;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(26, 109, 255, 0.18), transparent),
+    linear-gradient(180deg, #ffffff 0%, var(--surface) 100%);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+.brand-font {
+  font-family: 'Outfit', sans-serif;
+}
