@@ -22,7 +22,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'faceto0l',
-    foundation: 'D',
+    foundation: 'E',
     time: new Date().toISOString(),
   })
 })

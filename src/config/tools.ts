@@ -4,7 +4,7 @@ export type ToolDef = {
   description: string
   path: string
   category: string
-  status: 'ready-soon' | 'shell'
+  status: 'ready' | 'shell'
   badge: 'Free' | 'Pro' | 'Gold'
   icon: string
   accent: string
@@ -24,7 +24,7 @@ export const TOOLS: ToolDef[] = [
     description: 'Grab TikTok profile videos with thumbnail previews and schedule to pages.',
     path: '/dashboard/tools/tiktok-fb',
     category: 'TikTok to FB',
-    status: 'shell',
+    status: 'ready',
     badge: 'Pro',
     icon: 'TT',
     accent: '#111827',
@@ -35,7 +35,7 @@ export const TOOLS: ToolDef[] = [
     description: 'Grab IG posts (photo/video/carousel) onto the tool page and schedule.',
     path: '/dashboard/tools/instagram-fb',
     category: 'Instagram to FB',
-    status: 'shell',
+    status: 'ready',
     badge: 'Pro',
     icon: 'IG',
     accent: '#db2777',
@@ -46,7 +46,7 @@ export const TOOLS: ToolDef[] = [
     description: 'Paste or grab YouTube videos and schedule to Facebook pages.',
     path: '/dashboard/tools/youtube-fb',
     category: 'YouTube to FB',
-    status: 'shell',
+    status: 'ready',
     badge: 'Gold',
     icon: 'YT',
     accent: '#dc2626',
@@ -57,7 +57,7 @@ export const TOOLS: ToolDef[] = [
     description: 'Interval or Daily Window scheduling, delays, multi-page spread, activity.',
     path: '/dashboard/tools/bulk-scheduler',
     category: 'Schedulers',
-    status: 'shell',
+    status: 'ready',
     badge: 'Free',
     icon: 'SC',
     accent: '#1a6dff',

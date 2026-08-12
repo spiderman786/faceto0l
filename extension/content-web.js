@@ -60,6 +60,22 @@ window.addEventListener('message', (event) => {
   if (data.type === 'OPEN_BUSINESS_SUITE') {
     relay('OPEN_BUSINESS_SUITE', { pageId: data.pageId })
   }
+
+  if (data.type === 'GRAB_SOURCE') {
+    relay('GRAB_SOURCE', {
+      platform: data.platform,
+      maxItems: data.maxItems,
+      scrollRounds: data.scrollRounds,
+    })
+  }
+
+  if (data.type === 'PREPARE_POST') {
+    relay('PREPARE_POST', {
+      pageId: data.pageId,
+      itemUrl: data.itemUrl,
+      caption: data.caption,
+    })
+  }
 })
 
 post({

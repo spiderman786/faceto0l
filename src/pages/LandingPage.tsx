@@ -115,7 +115,7 @@ export function LandingPage() {
 
         <section className="mt-10 rounded-2xl border border-[var(--line)] bg-white p-5">
           <h2 className="brand-font text-lg font-semibold">API health check</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">Should show foundation C.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Should show foundation E.</p>
           {health ? (
             <pre className="mt-4 overflow-x-auto rounded-xl bg-[#0b1220] p-4 text-xs text-emerald-300">
               {JSON.stringify(health, null, 2)}

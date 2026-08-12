@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Faceto0l",
   "description": "Session bridge for Faceto0l — detects Facebook login and powers grab/schedule tools.",
-  "version": "0.2.1",
-  "permissions": ["cookies", "tabs", "storage", "scripting"],
+  "version": "0.3.0",
+  "permissions": ["cookies", "tabs", "storage", "scripting", "clipboardWrite"],
   "host_permissions": [
     "*://*.facebook.com/*",
     "*://business.facebook.com/*",

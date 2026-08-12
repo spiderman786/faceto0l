@@ -102,7 +102,7 @@ export function DashboardHome() {
       </div>
 
       <div className="mt-5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 text-sm text-amber-950">
-        Free plan active — TikTok / Instagram / YouTube → FB schedulers unlock fully after Foundations D–E.
+        Free plan active — Grab → thumbs → Interval/Daily Window is live (Foundation E). Keep Chrome open while schedules run.
       </div>
 
       {/* Activity strip like FaceBot */}

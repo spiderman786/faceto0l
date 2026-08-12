@@ -1,8 +1,23 @@
 import { Link, useParams } from 'react-router-dom'
 import { PagePicker } from '../../components/PagePicker'
+import { SchedulerTool } from '../../components/SchedulerTool'
 import { TOOLS } from '../../config/tools'
-import { openFacebookFromExtension, useExtensionStatus } from '../../lib/extension'
+import { openFacebookFromExtension, useExtensionStatus, type SourcePlatform } from '../../lib/extension'
 import { usePages } from '../../lib/pages'
+
+const TOOL_PLATFORM: Record<string, SourcePlatform | 'bulk'> = {
+  'tiktok-fb': 'tiktok',
+  'instagram-fb': 'instagram',
+  'youtube-fb': 'youtube',
+  'bulk-scheduler': 'bulk',
+}
+
+const GRAB_LABEL: Record<string, string> = {
+  tiktok: 'Grab Videos',
+  instagram: 'Grab Posts',
+  youtube: 'Grab Videos',
+  bulk: 'Grab',
+}
 
 export function ToolShellPage() {
   const { toolId } = useParams()
@@ -21,6 +36,8 @@ export function ToolShellPage() {
     )
   }
 
+  const platform = TOOL_PLATFORM[tool.id] || 'bulk'
+
   return (
     <div className="mx-auto max-w-5xl space-y-5">
       <div>
@@ -36,7 +53,7 @@ export function ToolShellPage() {
             {connected ? 'Facebook Connected' : installed ? 'Facebook Disconnected' : 'Extension required'}
           </span>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            Foundation D · Pages
+            Foundation E · Grab + Schedule
           </span>
           {selectedIds.length > 0 && (
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
@@ -72,23 +89,12 @@ export function ToolShellPage() {
 
       <PagePicker />
 
-      <div className="rounded-2xl border border-[var(--line)] bg-white p-6">
-        <h2 className="brand-font text-xl font-semibold">Thumbnail preview queue</h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Grab → items land here with thumbs (Foundation E). For now, select pages above and use{' '}
-          <strong>Open first page</strong> to smoke-test the session bridge.
-        </p>
-        <div className="mt-6 grid place-items-center rounded-2xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-4 py-14 text-center">
-          <p className="text-sm text-[var(--muted)]">Queue empty — grab ships next</p>
-          <button
-            type="button"
-            disabled
-            className="mt-4 rounded-full bg-slate-300 px-5 py-2.5 text-sm font-semibold text-white"
-          >
-            Grab Videos (Foundation E)
-          </button>
-        </div>
-      </div>
+      <SchedulerTool
+        toolId={tool.id}
+        platform={platform}
+        title="Thumbnail preview queue"
+        grabLabel={GRAB_LABEL[platform]}
+      />
     </div>
   )
 }
