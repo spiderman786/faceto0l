@@ -69,8 +69,8 @@ window.addEventListener('message', (event) => {
     })
   }
 
-  if (data.type === 'PREPARE_POST') {
-    relay('PREPARE_POST', {
+  if (data.type === 'PREPARE_POST' || data.type === 'POST_TO_PAGE') {
+    relay(data.type === 'POST_TO_PAGE' ? 'POST_TO_PAGE' : 'PREPARE_POST', {
       pageId: data.pageId,
       itemUrl: data.itemUrl,
       caption: data.caption,

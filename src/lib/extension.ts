@@ -112,8 +112,12 @@ export async function preparePost(input: {
     ok: boolean
     error?: string
     note?: string
-  }>('PREPARE_POST_RESULT')
-  postToExtension({ type: 'PREPARE_POST', ...input })
+    uploaded?: boolean
+    posted?: boolean
+    mode?: string
+    mediaResolved?: boolean
+  }>('POST_TO_PAGE_RESULT', 120000)
+  postToExtension({ type: 'POST_TO_PAGE', ...input })
   return pending
 }
 

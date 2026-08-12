@@ -156,6 +156,7 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             itemUrl: item.url,
             caption: item.caption || item.url,
           })
+          const status = res.uploaded || res.posted ? 'done' : res.ok ? 'opened' : 'failed'
           appendHistory({
             id: `${Date.now()}_${item.id}`,
             itemId: item.id,
@@ -165,14 +166,14 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
             pageId,
             pageName,
             scheduledAt: when.toISOString(),
-            status: res.ok ? 'opened' : 'failed',
+            status,
             note: res.note || res.error,
             toolId,
           })
           setInfo(
             res.ok
-              ? `Opened post ${index + 1}/${selectedQueue.length} → page ${pageName || pageId}`
-              : res.error || 'Prepare failed',
+              ? `${res.note || 'Posted'} (${index + 1}/${selectedQueue.length}) → ${pageName || pageId}`
+              : res.error || 'Post failed',
           )
         } catch (err) {
           appendHistory({
@@ -473,8 +474,8 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
           )}
         </div>
         <p className="mt-3 text-xs text-[var(--muted)]">
-          Each slot opens the source URL + Facebook page and copies caption when allowed. Fully automated
-          Meta composer publish is the next hardening pass — this unblocks Grab → thumbs → timed opens.
+          Each slot resolves media when possible, opens the Facebook page composer, attaches the file or
+          pastes caption/link, and tries Post. Keep this tab open. Confirm Post if Facebook asks.
         </p>
       </div>
 

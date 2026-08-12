@@ -41,10 +41,21 @@ async function getStatus() {
 }
 
 function waitForTabComplete(tabId, timeoutMs = 25000) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const existing = await chrome.tabs.get(tabId)
+      if (existing.status === 'complete') {
+        resolve()
+        return
+      }
+    } catch (err) {
+      reject(err)
+      return
+    }
+
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(onUpdated)
-      reject(new Error('Timed out loading Facebook pages tab'))
+      reject(new Error('Timed out loading tab'))
     }, timeoutMs)
 
     function onUpdated(id, info) {
@@ -343,35 +354,263 @@ async function grabSource(platform, options = {}) {
   }
 }
 
-async function preparePost({ pageId, itemUrl, caption }) {
+async function sleep(ms) {
+  await new Promise((r) => setTimeout(r, ms))
+}
+
+function resolveMediaInPage() {
+  const html = document.documentElement?.innerHTML || ''
+  const ogVideo =
+    document.querySelector('meta[property="og:video"]')?.getAttribute('content') ||
+    document.querySelector('meta[property="og:video:secure_url"]')?.getAttribute('content')
+  const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content')
+  const videoEl = document.querySelector('video')
+  const videoSrc = videoEl?.currentSrc || videoEl?.src || null
+
+  const playAddr =
+    html.match(/"playAddr"\s*:\s*"([^"]+)"/)?.[1] ||
+    html.match(/"downloadAddr"\s*:\s*"([^"]+)"/)?.[1] ||
+    html.match(/"play_url"\s*:\s*"([^"]+)"/)?.[1]
+
+  const decode = (u) => {
+    if (!u) return null
+    try {
+      return JSON.parse(`"${u.replace(/^"/, '').replace(/"$/, '')}"`)
+    } catch {
+      return u.replace(/\\u002F/g, '/').replace(/\\\//g, '/').replace(/\\u0026/g, '&')
+    }
+  }
+
+  const candidates = [decode(playAddr), ogVideo, videoSrc].filter(Boolean)
+  const mediaUrl = candidates.find((u) => /^https?:\/\//i.test(u)) || null
+  const imageUrl = ogImage && /^https?:\/\//i.test(ogImage) ? ogImage : null
+
+  let kind = 'link'
+  if (mediaUrl && /\.(mp4|webm|mov)(\?|$)/i.test(mediaUrl)) kind = 'video'
+  else if (mediaUrl) kind = 'video'
+  else if (imageUrl) kind = 'image'
+
+  const title =
+    document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+    document.title ||
+    ''
+
+  return {
+    mediaUrl,
+    imageUrl,
+    kind: mediaUrl ? kind : imageUrl ? 'image' : 'link',
+    title: title.slice(0, 200),
+    href: location.href,
+  }
+}
+
+async function fetchMediaAsBase64(url, maxBytes = 4.5 * 1024 * 1024) {
+  const res = await fetch(url, { credentials: 'omit' })
+  if (!res.ok) throw new Error(`Media fetch HTTP ${res.status}`)
+  const buf = await res.arrayBuffer()
+  if (buf.byteLength > maxBytes) {
+    return { tooLarge: true, size: buf.byteLength, mime: res.headers.get('content-type') || 'application/octet-stream' }
+  }
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  const mime = res.headers.get('content-type') || 'application/octet-stream'
+  return {
+    tooLarge: false,
+    size: buf.byteLength,
+    mime,
+    base64: btoa(binary),
+  }
+}
+
+async function runFacebookComposer(tabId, payload) {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (input) => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+      const clickByText = (texts) => {
+        const nodes = [...document.querySelectorAll('[role="button"], button, div[tabindex="0"], span')]
+        for (const t of texts) {
+          const el = nodes.find((n) => (n.textContent || '').trim().toLowerCase() === t.toLowerCase())
+          if (el) {
+            el.click()
+            return true
+          }
+        }
+        for (const t of texts) {
+          const el = nodes.find((n) => (n.textContent || '').trim().toLowerCase().includes(t.toLowerCase()))
+          if (el) {
+            el.click()
+            return true
+          }
+        }
+        return false
+      }
+
+      const setCaption = async (text) => {
+        const editors = [
+          ...document.querySelectorAll('div[contenteditable="true"][role="textbox"]'),
+          ...document.querySelectorAll('div[contenteditable="true"]'),
+          ...document.querySelectorAll('[data-lexical-editor="true"]'),
+        ]
+        const editor = editors[0]
+        if (!editor) return false
+        editor.focus()
+        try {
+          document.execCommand('selectAll', false)
+          document.execCommand('insertText', false, text)
+        } catch {
+          editor.textContent = text
+          editor.dispatchEvent(new InputEvent('input', { bubbles: true }))
+        }
+        await sleep(400)
+        return true
+      }
+
+      const attachFile = async () => {
+        if (!input.base64 || !input.fileName) return false
+        const binary = atob(input.base64)
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+        const file = new File([bytes], input.fileName, { type: input.mime || 'application/octet-stream' })
+
+        clickByText(['Photo/video', 'Photo/Video', 'Add photo/video', 'Reel', 'Reels'])
+        await sleep(1200)
+
+        let inputEl = document.querySelector('input[type="file"]')
+        if (!inputEl) {
+          clickByText(['Photo/video', 'Add photo/video'])
+          await sleep(1000)
+          inputEl = document.querySelector('input[type="file"]')
+        }
+        if (!inputEl) return false
+
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        inputEl.files = dt.files
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }))
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }))
+        await sleep(2000)
+        return true
+      }
+
+      // Open composer if needed
+      clickByText(['Create post', 'Post', "What's on your mind?"])
+      await sleep(900)
+
+      let uploaded = false
+      if (input.mode === 'upload') {
+        uploaded = await attachFile()
+      }
+
+      const captionText = [input.caption, input.linkUrl].filter(Boolean).join('\n\n')
+      const captioned = await setCaption(captionText)
+
+      await sleep(800)
+      const posted =
+        clickByText(['Post', 'Publish', 'Share now', 'Next']) ||
+        clickByText(['Post'])
+
+      return {
+        ok: Boolean(uploaded || captioned),
+        uploaded,
+        captioned,
+        posted,
+        mode: input.mode,
+      }
+    },
+    args: [payload],
+  })
+  return result || { ok: false }
+}
+
+async function postToPage({ pageId, itemUrl, caption }) {
   if (!pageId) return { ok: false, error: 'pageId required' }
   if (!itemUrl) return { ok: false, error: 'itemUrl required' }
 
-  const pageUrl = `https://www.facebook.com/profile.php?id=${encodeURIComponent(pageId)}`
-  await chrome.tabs.create({ url: itemUrl, active: false })
-  await chrome.tabs.create({ url: pageUrl, active: true })
+  const session = await getFacebookSession()
+  if (!session.connected) return { ok: false, error: 'Facebook Disconnected' }
 
+  // Resolve media from source item page
+  const sourceTab = await chrome.tabs.create({ url: itemUrl, active: false })
+  let media = null
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id },
-      func: async (text) => {
-        try {
-          await navigator.clipboard.writeText(text)
-        } catch {
-          // ignore clipboard failures
-        }
-      },
-      args: [caption || itemUrl],
+    await waitForTabComplete(sourceTab.id, 30000)
+    await sleep(2500)
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: sourceTab.id },
+      func: resolveMediaInPage,
     })
-  } catch {
-    // clipboard optional
+    media = result
+  } catch (err) {
+    console.warn('[faceto0l] media resolve failed', err)
   }
 
-  return {
-    ok: true,
-    pageUrl,
-    itemUrl,
-    note: 'Opened source + Facebook page. Caption/URL copied when clipboard allowed — paste into composer to finish post.',
+  let uploadPayload = null
+  const fetchUrl = media?.mediaUrl || (media?.kind === 'image' ? media?.imageUrl : null)
+  if (fetchUrl) {
+    try {
+      const fetched = await fetchMediaAsBase64(fetchUrl)
+      if (!fetched.tooLarge) {
+        const isImage = (fetched.mime || '').startsWith('image') || media?.kind === 'image'
+        uploadPayload = {
+          mode: 'upload',
+          base64: fetched.base64,
+          mime: fetched.mime || (isImage ? 'image/jpeg' : 'video/mp4'),
+          fileName: isImage ? 'faceto0l.jpg' : 'faceto0l.mp4',
+          caption: caption || media?.title || '',
+          linkUrl: itemUrl,
+        }
+      } else {
+        // Large video: download for manual attach fallback
+        try {
+          await chrome.downloads.download({
+            url: fetchUrl,
+            filename: `Faceto0l/${Date.now()}_media`,
+            saveAs: false,
+          })
+        } catch {
+          // optional
+        }
+      }
+    } catch (err) {
+      console.warn('[faceto0l] media fetch failed', err)
+    }
+  }
+
+  const composerUrl = `https://www.facebook.com/profile.php?id=${encodeURIComponent(pageId)}`
+  const composerTab = await chrome.tabs.create({ url: composerUrl, active: true })
+  try {
+    await waitForTabComplete(composerTab.id, 30000)
+    await sleep(2500)
+
+    const payload = uploadPayload || {
+      mode: 'link',
+      caption: caption || media?.title || '',
+      linkUrl: itemUrl,
+    }
+
+    const result = await runFacebookComposer(composerTab.id, payload)
+
+    return {
+      ok: Boolean(result?.ok || result?.captioned || result?.uploaded),
+      uploaded: Boolean(result?.uploaded),
+      posted: Boolean(result?.posted),
+      mode: payload.mode,
+      mediaResolved: Boolean(fetchUrl),
+      note: result?.uploaded
+        ? 'Media attached to Facebook composer — confirm Post if needed.'
+        : result?.captioned
+          ? 'Caption/link filled in composer — click Post to publish.'
+          : 'Opened Facebook page. Composer controls may have changed — finish Post manually.',
+      error: result?.ok ? undefined : 'Composer automation partially failed',
+    }
+  } finally {
+    if (sourceTab.id) chrome.tabs.remove(sourceTab.id).catch(() => {})
   }
 }
 
@@ -418,8 +657,8 @@ function handleMessage(message, sendResponse) {
     return true
   }
 
-  if (message.type === 'PREPARE_POST') {
-    preparePost({
+  if (message.type === 'PREPARE_POST' || message.type === 'POST_TO_PAGE') {
+    postToPage({
       pageId: message.pageId,
       itemUrl: message.itemUrl,
       caption: message.caption,
