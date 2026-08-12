@@ -11,7 +11,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "dev:worker": "tsx watch server/worker.ts",
-    "build": "node scripts/pack-extension.mjs && vite build",
+    "build": "vite build",
     "pack:extension": "node scripts/pack-extension.mjs",
     "build:check": "tsc -b && vite build",
     "start": "tsx server/index.ts",
