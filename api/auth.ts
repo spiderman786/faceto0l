@@ -94,13 +94,20 @@ function readBody(req: VercelRequest): Record<string, unknown> {
   return {}
 }
 
+function actionFrom(req: VercelRequest): string {
+  const q = req.query.action
+  if (typeof q === 'string' && q) return q
+  if (Array.isArray(q) && q[0]) return String(q[0])
+
+  const url = String(req.url || '')
+  const match = url.match(/\/api\/auth\/([^/?#]+)/)
+  if (match?.[1]) return match[1]
+
+  return ''
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const parts = Array.isArray(req.query.path)
-    ? req.query.path
-    : String(req.query.path || '')
-        .split('/')
-        .filter(Boolean)
-  const action = parts[0] || ''
+  const action = actionFrom(req)
 
   try {
     if (req.method === 'GET' && action === 'me') {
@@ -171,7 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
 
-    res.status(404).json({ error: 'Not found' })
+    res.status(404).json({ error: 'Not found', action })
   } catch (err) {
     console.error('[faceto0l auth]', err)
     res.status(500).json({ error: err instanceof Error ? err.message : 'Server error' })
