@@ -401,14 +401,20 @@ async function openBusinessSuite(pageId) {
 /** Self-contained scrape injected into source tabs */
 async function scrapeSourceInPage(platform, options) {
   const maxItems = Math.min(Number(options.maxItems) || 40, 80)
-  const scrollRounds = Math.min(Number(options.scrollRounds) || 8, 20)
-  const pauseMs = 700
+  const scrollRounds = Math.min(Number(options.scrollRounds) || 10, 20)
+  const pauseMs = 800
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const map = new Map()
 
   const push = (item) => {
     if (!item?.url || !item.id) return
-    if (map.has(item.id)) return
+    const prev = map.get(item.id)
+    if (prev) {
+      // Upgrade missing thumb/caption on later passes
+      if (!prev.thumb && item.thumb) prev.thumb = item.thumb
+      if (!prev.caption && item.caption) prev.caption = item.caption
+      return
+    }
     map.set(item.id, item)
   }
 
@@ -420,20 +426,110 @@ async function scrapeSourceInPage(platform, options) {
     }
   }
 
+  const imgUrl = (el) => {
+    if (!el) return null
+    const candidates = [
+      el.currentSrc,
+      el.src,
+      el.getAttribute('src'),
+      el.getAttribute('data-src'),
+      el.getAttribute('data-poster'),
+      ...(el.srcset || el.getAttribute('srcset') || '')
+        .split(',')
+        .map((s) => s.trim().split(/\s+/)[0])
+        .filter(Boolean),
+    ]
+    for (const c of candidates) {
+      if (!c || c.startsWith('data:image/svg')) continue
+      if (/^https?:\/\//i.test(c)) return c
+      const a = abs(c)
+      if (a && /^https?:\/\//i.test(a)) return a
+    }
+    return null
+  }
+
+  const bgUrl = (el) => {
+    if (!el) return null
+    const bg = getComputedStyle(el).backgroundImage || ''
+    const m = bg.match(/url\(["']?(https?:\/\/[^"')]+)["']?\)/i)
+    return m?.[1] || null
+  }
+
+  const decodeJsonStr = (s) => {
+    if (!s) return ''
+    try {
+      return JSON.parse(`"${s}"`)
+    } catch {
+      return s
+        .replace(/\\u002F/g, '/')
+        .replace(/\\\//g, '/')
+        .replace(/\\u0026/g, '&')
+        .replace(/\\"/g, '"')
+    }
+  }
+
+  const scrapeTikTokJson = () => {
+    const html = document.documentElement.innerHTML
+    // cover / originCover / dynamicCover next to video id
+    const re =
+      /"id"\s*:\s*"(\d{8,})"[\s\S]{0,800}?"(?:originCover|cover|dynamicCover|thumbnail)"\s*:\s*"(https:[^"\\]*(?:\\.[^"\\]*)*)"/g
+    let m
+    while ((m = re.exec(html))) {
+      const id = m[1]
+      const thumb = decodeJsonStr(m[2]).replace(/\\u002F/g, '/')
+      const user = location.pathname.match(/@[\w._-]+/)?.[0] || 'video'
+      const descMatch = html.slice(Math.max(0, m.index - 200), m.index + 900).match(/"desc"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/)
+      push({
+        id: `tt_${id}`,
+        url: `https://www.tiktok.com/${user}/video/${id}`,
+        thumb: /^https?:/i.test(thumb) ? thumb : null,
+        caption: decodeJsonStr(descMatch?.[1] || '').slice(0, 200),
+        platform: 'tiktok',
+      })
+    }
+
+    // reverse order pattern: cover then id
+    const re2 =
+      /"(?:originCover|cover|dynamicCover)"\s*:\s*"(https:[^"\\]*(?:\\.[^"\\]*)*)"[\s\S]{0,400}?"id"\s*:\s*"(\d{8,})"/g
+    while ((m = re2.exec(html))) {
+      const thumb = decodeJsonStr(m[1]).replace(/\\u002F/g, '/')
+      const id = m[2]
+      const user = location.pathname.match(/@[\w._-]+/)?.[0] || 'video'
+      push({
+        id: `tt_${id}`,
+        url: `https://www.tiktok.com/${user}/video/${id}`,
+        thumb: /^https?:/i.test(thumb) ? thumb : null,
+        caption: '',
+        platform: 'tiktok',
+      })
+    }
+  }
+
   const scrapeOnce = () => {
     if (platform === 'tiktok') {
+      scrapeTikTokJson()
       document.querySelectorAll('a[href*="/video/"]').forEach((a) => {
         const href = abs(a.getAttribute('href') || '')
         if (!href) return
         const m = href.match(/\/video\/(\d+)/)
         if (!m) return
-        const card = a.closest('div') || a.parentElement
+        const card =
+          a.closest('[data-e2e="user-post-item"], [data-e2e="user-post-item-list"] > div, .video-feed-item') ||
+          a.closest('div') ||
+          a.parentElement
         const img = card?.querySelector?.('img')
+        const video = card?.querySelector?.('video')
+        const thumb =
+          imgUrl(img) ||
+          video?.poster ||
+          bgUrl(card) ||
+          bgUrl(a) ||
+          null
         push({
           id: `tt_${m[1]}`,
           url: href.split('?')[0],
-          thumb: img?.src || null,
-          caption: (img?.alt || '').slice(0, 200),
+          thumb,
+          caption: (img?.alt || a.getAttribute('aria-label') || '').slice(0, 200),
           platform: 'tiktok',
         })
       })
@@ -447,7 +543,7 @@ async function scrapeSourceInPage(platform, options) {
         push({
           id: `ig_${m[1]}_${m[2]}`,
           url: href.split('?')[0],
-          thumb: img?.src || null,
+          thumb: imgUrl(img),
           caption: (img?.alt || '').slice(0, 200),
           platform: 'instagram',
         })
@@ -479,7 +575,7 @@ async function scrapeSourceInPage(platform, options) {
         push({
           id,
           url,
-          thumb: img?.src || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+          thumb: imgUrl(img) || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
           caption: title.trim().slice(0, 200),
           platform: 'youtube',
         })
@@ -502,6 +598,42 @@ async function scrapeSourceInPage(platform, options) {
     profile: location.pathname.match(/@[\w._-]+/)?.[0] || null,
     href: location.href,
   }
+}
+
+async function thumbUrlToDataUrl(url, maxBytes = 350000) {
+  if (!url || url.startsWith('data:')) return url
+  try {
+    const res = await fetch(url, { credentials: 'omit', redirect: 'follow' })
+    if (!res.ok) return url
+    const buf = await res.arrayBuffer()
+    if (!buf.byteLength || buf.byteLength > maxBytes) return url
+    const bytes = new Uint8Array(buf)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+    const mime = res.headers.get('content-type') || 'image/jpeg'
+    return `data:${mime.split(';')[0]};base64,${btoa(binary)}`
+  } catch {
+    return url
+  }
+}
+
+async function hydrateThumbs(items) {
+  const out = []
+  for (const item of items.slice(0, 36)) {
+    let thumb = item.thumb || null
+    // YouTube fallback if missing
+    if (!thumb && item.platform === 'youtube') {
+      const id = String(item.id || '').replace(/^yt_/, '')
+      if (id) thumb = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+    }
+    if (thumb && /^https?:/i.test(thumb)) {
+      thumb = await thumbUrlToDataUrl(thumb)
+    }
+    out.push({ ...item, thumb })
+  }
+  // keep remainder without hydration
+  for (const item of items.slice(36)) out.push(item)
+  return out
 }
 
 function pickBestSourceTab(tabs, platform) {
@@ -547,13 +679,25 @@ async function grabSource(platform, options = {}) {
       args: [platform, options],
     })
     const result = injected?.[0]?.result
-    const items = Array.isArray(result?.items) ? result.items : []
+    let items = Array.isArray(result?.items) ? result.items : []
+
+    // Convert CDN thumbs → data URLs so they render on faceto0l.vercel.app (hotlink-safe)
+    if (items.length) {
+      try {
+        items = await hydrateThumbs(items)
+      } catch (err) {
+        console.warn('[faceto0l] thumb hydrate failed', err)
+      }
+    }
+
+    const withThumbs = items.filter((i) => i.thumb).length
     return {
       ok: items.length > 0,
       items,
       scrolled: result?.scrolled || 0,
       profile: result?.profile || null,
       tabUrl: result?.href || tab.url,
+      thumbs: withThumbs,
       error: items.length ? undefined : 'No videos/posts found on that tab. Scroll the profile and try again.',
     }
   } catch (err) {

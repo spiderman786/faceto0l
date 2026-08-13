@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 
 const EXT_ZIP = '/extension/faceto0l-extension.zip'
-const VERSION = '0.4.0'
+const VERSION = '0.4.1'
 
 export function InstallExtensionPage() {
   return (

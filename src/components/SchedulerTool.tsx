@@ -389,10 +389,24 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
               >
                 <div className="aspect-[9/14] bg-slate-100">
                   {item.thumb ? (
-                    <img src={item.thumb} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="grid h-full place-items-center text-xs text-slate-400">No thumb</div>
-                  )}
+                    <img
+                      src={item.thumb}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                        const fallback = e.currentTarget.parentElement?.querySelector('[data-thumb-fallback]')
+                        if (fallback) fallback.classList.remove('hidden')
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    data-thumb-fallback
+                    className={`grid h-full place-items-center text-xs text-slate-400 ${item.thumb ? 'hidden' : ''}`}
+                  >
+                    No thumb
+                  </div>
                 </div>
                 <div className="space-y-1 p-3">
                   <div className="flex items-center gap-2">
@@ -624,7 +638,12 @@ export function SchedulerTool({ toolId, platform, title, grabLabel }: Props) {
                   className="flex items-center gap-3 rounded-xl border border-[var(--line)] px-3 py-2 text-sm"
                 >
                   {h.thumb ? (
-                    <img src={h.thumb} alt="" className="h-10 w-10 rounded object-cover" />
+                    <img
+                      src={h.thumb}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="h-10 w-10 rounded object-cover"
+                    />
                   ) : (
                     <div className="grid h-10 w-10 place-items-center rounded bg-slate-100 text-[10px]">
                       —
