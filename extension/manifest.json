@@ -2,17 +2,27 @@
   "manifest_version": 3,
   "name": "Faceto0l",
   "description": "Session bridge for Faceto0l — detects Facebook login and powers grab/schedule tools.",
-  "version": "0.4.1",
-  "permissions": ["cookies", "tabs", "storage", "scripting", "clipboardWrite", "downloads"],
+  "version": "0.4.2",
+  "permissions": [
+    "cookies",
+    "tabs",
+    "storage",
+    "scripting",
+    "clipboardWrite",
+    "downloads",
+    "declarativeNetRequest"
+  ],
   "host_permissions": [
     "*://*.facebook.com/*",
     "*://business.facebook.com/*",
     "*://graph.facebook.com/*",
     "*://*.instagram.com/*",
     "*://*.cdninstagram.com/*",
+    "*://*.fbcdn.net/*",
     "*://*.tiktok.com/*",
     "*://*.tiktokcdn.com/*",
     "*://*.tiktokcdn-us.com/*",
+    "*://*.tiktokv.com/*",
     "*://*.ibyteimg.com/*",
     "*://*.youtube.com/*",
     "*://*.googlevideo.com/*",
@@ -21,6 +31,15 @@
     "http://127.0.0.1:5173/*",
     "https://*.vercel.app/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "cdn_thumbs",
+        "enabled": true,
+        "path": "rules_cdn.json"
+      }
+    ]
+  },
   "background": {
     "service_worker": "background.js"
   },

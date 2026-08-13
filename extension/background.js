@@ -470,15 +470,32 @@ async function scrapeSourceInPage(platform, options) {
 
   const scrapeTikTokJson = () => {
     const html = document.documentElement.innerHTML
+    const user = location.pathname.match(/@[\w._-]+/)?.[0] || 'video'
+    let m
+
+    // FaceBot-style aweme cover: video.cover.url_list[0] + aweme_id
+    const awemeRe =
+      /"aweme_id"\s*:\s*"(\d{8,})"[\s\S]{0,2500}?"cover"\s*:\s*\{[\s\S]{0,400}?"url_list"\s*:\s*\[\s*"(https:[^"\\]*(?:\\.[^"\\]*)*)"/g
+    while ((m = awemeRe.exec(html))) {
+      const thumb = decodeJsonStr(m[2]).replace(/\\u002F/g, '/')
+      push({
+        id: `tt_${m[1]}`,
+        url: `https://www.tiktok.com/${user}/video/${m[1]}`,
+        thumb: /^https?:/i.test(thumb) ? thumb : null,
+        caption: '',
+        platform: 'tiktok',
+      })
+    }
+
     // cover / originCover / dynamicCover next to video id
     const re =
       /"id"\s*:\s*"(\d{8,})"[\s\S]{0,800}?"(?:originCover|cover|dynamicCover|thumbnail)"\s*:\s*"(https:[^"\\]*(?:\\.[^"\\]*)*)"/g
-    let m
     while ((m = re.exec(html))) {
       const id = m[1]
       const thumb = decodeJsonStr(m[2]).replace(/\\u002F/g, '/')
-      const user = location.pathname.match(/@[\w._-]+/)?.[0] || 'video'
-      const descMatch = html.slice(Math.max(0, m.index - 200), m.index + 900).match(/"desc"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/)
+      const descMatch = html
+        .slice(Math.max(0, m.index - 200), m.index + 900)
+        .match(/"desc"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/)
       push({
         id: `tt_${id}`,
         url: `https://www.tiktok.com/${user}/video/${id}`,
@@ -494,10 +511,23 @@ async function scrapeSourceInPage(platform, options) {
     while ((m = re2.exec(html))) {
       const thumb = decodeJsonStr(m[1]).replace(/\\u002F/g, '/')
       const id = m[2]
-      const user = location.pathname.match(/@[\w._-]+/)?.[0] || 'video'
       push({
         id: `tt_${id}`,
         url: `https://www.tiktok.com/${user}/video/${id}`,
+        thumb: /^https?:/i.test(thumb) ? thumb : null,
+        caption: '',
+        platform: 'tiktok',
+      })
+    }
+
+    // url_list first entry near aweme/video id
+    const re3 =
+      /"id"\s*:\s*"(\d{8,})"[\s\S]{0,1200}?"url_list"\s*:\s*\[\s*"(https:\\\/\\\/[^"\\]+tiktok[^"\\]*)"/gi
+    while ((m = re3.exec(html))) {
+      const thumb = decodeJsonStr(m[2]).replace(/\\u002F/g, '/').replace(/\\\//g, '/')
+      push({
+        id: `tt_${m[1]}`,
+        url: `https://www.tiktok.com/${user}/video/${m[1]}`,
         thumb: /^https?:/i.test(thumb) ? thumb : null,
         caption: '',
         platform: 'tiktok',
@@ -603,7 +633,16 @@ async function scrapeSourceInPage(platform, options) {
 async function thumbUrlToDataUrl(url, maxBytes = 350000) {
   if (!url || url.startsWith('data:')) return url
   try {
-    const res = await fetch(url, { credentials: 'omit', redirect: 'follow' })
+    const referer = /instagram|cdninstagram/i.test(url)
+      ? 'https://www.instagram.com/'
+      : /youtube|ytimg/i.test(url)
+        ? 'https://www.youtube.com/'
+        : 'https://www.tiktok.com/'
+    const res = await fetch(url, {
+      credentials: 'omit',
+      redirect: 'follow',
+      headers: { Referer: referer },
+    })
     if (!res.ok) return url
     const buf = await res.arrayBuffer()
     if (!buf.byteLength || buf.byteLength > maxBytes) return url
@@ -1067,4 +1106,4 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
   return handleMessage(message, sendResponse)
 })
 
-console.log('[faceto0l] background ready · foundation E')
+console.log('[faceto0l] background ready · foundation E · thumbs DNR')
