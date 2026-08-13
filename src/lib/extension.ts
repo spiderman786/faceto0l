@@ -79,6 +79,18 @@ export function requestListPages(force = true) {
   postToExtension({ type: 'LIST_PAGES', force })
 }
 
+export async function listPagesFromExtension(force = true) {
+  const pending = waitForExtensionResult<{
+    ok: boolean
+    pages?: FbPage[]
+    error?: string
+    warning?: string
+    source?: string
+  }>('LIST_PAGES_RESULT', 90000)
+  postToExtension({ type: 'LIST_PAGES', force })
+  return pending
+}
+
 export function openPageComposer(pageId: string) {
   postToExtension({ type: 'OPEN_PAGE_COMPOSER', pageId })
 }

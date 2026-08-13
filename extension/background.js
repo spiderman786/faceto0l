@@ -1,5 +1,9 @@
 const FACEBOOK_URL = 'https://www.facebook.com'
-const PAGES_URL = 'https://www.facebook.com/pages/?category=your_pages'
+const PAGES_URLS = [
+  'https://www.facebook.com/pages/?category=your_pages',
+  'https://www.facebook.com/pages/?category=liked&ref=bookmarks',
+  'https://business.facebook.com/settings/pages',
+]
 const PAGES_CACHE_KEY = 'faceto0l_pages'
 const PAGES_CACHE_AT = 'faceto0l_pages_at'
 
@@ -89,53 +93,81 @@ function waitForTabComplete(tabId, timeoutMs = 25000) {
   })
 }
 
-async function scrapePagesFromTab(tabId) {
-  try {
-    const res = await chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_PAGES' })
-    if (res?.pages?.length) return res.pages
-  } catch {
-    // content script may not be ready yet
+function scrapePagesInjected() {
+  const map = new Map()
+  const html = document.documentElement?.innerHTML || ''
+
+  const push = (id, name) => {
+    if (!id || !/^\d{5,}$/.test(String(id))) return
+    let cleanName = (name || `Page ${id}`).trim()
+    try {
+      cleanName = cleanName
+        .replace(/\\u([\dA-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\"/g, '"')
+    } catch {
+      // keep
+    }
+    if (cleanName.length > 80) cleanName = cleanName.slice(0, 80)
+    const key = String(id)
+    if (!map.has(key) || (name && map.get(key).name.startsWith('Page '))) {
+      map.set(key, { id: key, name: cleanName || `Page ${key}` })
+    }
   }
 
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      const map = new Map()
-      const html = document.documentElement?.innerHTML || ''
+  const patterns = [
+    [/"pageID"\s*:\s*"(\d+)"[\s\S]{0,240}?"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, false],
+    [/"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"[\s\S]{0,240}?"pageID"\s*:\s*"(\d+)"/g, true],
+    [/"id"\s*:\s*"(\d+)"\s*,\s*"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"category_type"\s*:\s*"PAGE"/g, false],
+    [/"delegate_page"\s*:\s*\{\s*"id"\s*:\s*"(\d+)"/g, false],
+    [/"page_id"\s*:\s*"(\d+)"[\s\S]{0,160}?"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, false],
+    [/"additional_profile_id"\s*:\s*"(\d+)"/g, false],
+    [/"profile_plus_id"\s*:\s*"(\d+)"/g, false],
+    [/"actorID"\s*:\s*"(\d+)"/g, false],
+  ]
 
-      const push = (id, name) => {
-        if (!id || !/^\d{5,}$/.test(id)) return
-        const cleanName = (name || `Page ${id}`).replace(/\\u[\dA-Fa-f]{4}/g, (m) =>
-          String.fromCharCode(parseInt(m.slice(2), 16)),
-        )
-        if (!map.has(id)) map.set(id, { id, name: cleanName })
-      }
+  for (const [re, nameFirst] of patterns) {
+    let m
+    while ((m = re.exec(html))) {
+      if (nameFirst) push(m[2], m[1])
+      else push(m[1], m[2] || null)
+    }
+  }
 
-      const patterns = [
-        /"pageID"\s*:\s*"(\d+)"[\s\S]{0,180}?"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g,
-        /"id"\s*:\s*"(\d+)"\s*,\s*"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"category_type"\s*:\s*"PAGE"/g,
-        /"delegate_page"\s*:\s*\{\s*"id"\s*:\s*"(\d+)"/g,
-      ]
-
-      for (const re of patterns) {
-        let m
-        while ((m = re.exec(html))) {
-          push(m[1], m[2] || null)
-        }
-      }
-
-      document.querySelectorAll('a[href*="facebook.com/"]').forEach((a) => {
-        const href = a.getAttribute('href') || ''
-        const text = (a.textContent || '').trim()
-        const idMatch = href.match(/[?&]id=(\d{5,})/) || href.match(/\/(\d{8,})\b/)
-        if (idMatch && text.length > 1 && text.length < 80) push(idMatch[1], text)
-      })
-
-      return [...map.values()]
-    },
+  document.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href') || ''
+    const text = (a.textContent || '').replace(/\s+/g, ' ').trim()
+    const idMatch =
+      href.match(/[?&]id=(\d{5,})/) ||
+      href.match(/\/pages\/[^/]+\/(\d{5,})/) ||
+      href.match(/profile\.php\?id=(\d{5,})/)
+    if (idMatch && text.length > 1 && text.length < 80) push(idMatch[1], text)
   })
 
-  return Array.isArray(result) ? result : []
+  return [...map.values()]
+}
+
+async function scrapePagesFromTab(tabId) {
+  try {
+    const res = await Promise.race([
+      chrome.tabs.sendMessage(tabId, { type: 'SCRAPE_PAGES' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('scrape timeout')), 8000)),
+    ])
+    if (res?.pages?.length) return res.pages
+  } catch {
+    // inject fallback
+  }
+
+  try {
+    const injected = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: scrapePagesInjected,
+    })
+    const result = injected?.[0]?.result
+    return Array.isArray(result) ? result : []
+  } catch (err) {
+    console.warn('[faceto0l] executeScript scrape failed', err)
+    return []
+  }
 }
 
 async function listPages({ force = false } = {}) {
@@ -153,6 +185,7 @@ async function listPages({ force = false } = {}) {
     }
   }
 
+  // Prefer already-open Facebook tabs first (fast)
   const existing = await chrome.tabs.query({
     url: ['*://www.facebook.com/*', '*://*.facebook.com/*', '*://business.facebook.com/*'],
   })
@@ -172,26 +205,62 @@ async function listPages({ force = false } = {}) {
     }
   }
 
-  const tab = await chrome.tabs.create({ url: PAGES_URL, active: false })
-  try {
-    await waitForTabComplete(tab.id)
-    await new Promise((r) => setTimeout(r, 2500))
-    const pages = await scrapePagesFromTab(tab.id)
+  // Facebook often won't fully render inactive tabs — open pages manager focused
+  const prev = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+  let best = []
+  let source = 'pages-tab'
+
+  for (const url of PAGES_URLS) {
+    const tab = await chrome.tabs.create({ url, active: true })
+    try {
+      await waitForTabComplete(tab.id, 35000)
+      await sleep(4500)
+      // nudge lazy load
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: async () => {
+            window.scrollBy(0, 1200)
+            await new Promise((r) => setTimeout(r, 800))
+            window.scrollBy(0, 1200)
+          },
+        })
+      } catch {
+        // ignore
+      }
+      await sleep(1500)
+      const pages = await scrapePagesFromTab(tab.id)
+      if (pages.length > best.length) {
+        best = pages
+        source = url.includes('business') ? 'business-settings' : 'pages-tab'
+      }
+      if (best.length >= 1) break
+    } catch (err) {
+      console.warn('[faceto0l] pages url failed', url, err)
+    } finally {
+      if (tab.id) chrome.tabs.remove(tab.id).catch(() => {})
+    }
+  }
+
+  if (prev?.id) {
+    chrome.tabs.update(prev.id, { active: true }).catch(() => {})
+  }
+
+  if (best.length) {
     await chrome.storage.local.set({
-      [PAGES_CACHE_KEY]: pages,
+      [PAGES_CACHE_KEY]: best,
       [PAGES_CACHE_AT]: Date.now(),
     })
-    return {
-      ok: true,
-      pages,
-      source: 'pages-tab',
-      warning:
-        pages.length === 0
-          ? 'No pages found. Open facebook.com/pages while logged in, then Refresh pages.'
-          : undefined,
-    }
-  } finally {
-    if (tab.id) chrome.tabs.remove(tab.id).catch(() => {})
+  }
+
+  return {
+    ok: true,
+    pages: best,
+    source,
+    warning:
+      best.length === 0
+        ? 'No pages auto-detected. Open facebook.com/pages (Your pages), then Refresh — or add a Page ID manually below.'
+        : undefined,
   }
 }
 

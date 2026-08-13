@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   openBusinessSuite,
   openPageComposer,
@@ -15,10 +16,13 @@ export function PagePicker() {
     warning,
     source,
     refreshPages,
+    addManualPage,
     togglePage,
     selectAll,
     clearSelection,
   } = usePages()
+  const [manualId, setManualId] = useState('')
+  const [manualName, setManualName] = useState('')
 
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-white p-5">
@@ -37,7 +41,7 @@ export function PagePicker() {
             disabled={!installed || loading}
             className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-semibold hover:border-[var(--brand)] disabled:opacity-50"
           >
-            {loading ? 'Loading…' : 'Refresh pages'}
+            {loading ? 'Scanning…' : 'Refresh pages'}
           </button>
           <button
             type="button"
@@ -81,10 +85,12 @@ export function PagePicker() {
 
       <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
         {loading && !pages.length ? (
-          <div className="py-8 text-center text-sm text-[var(--muted)]">Scanning Facebook for pages…</div>
+          <div className="py-8 text-center text-sm text-[var(--muted)]">
+            Scanning Facebook for pages… (opens a pages tab briefly — wait up to ~30s)
+          </div>
         ) : pages.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] px-4 py-8 text-center text-sm text-[var(--muted)]">
-            No pages yet. Click <strong>Refresh pages</strong> while logged into Facebook.
+            No pages yet. Click <strong>Refresh pages</strong>, or add a Page ID manually below.
           </div>
         ) : (
           pages.map((page) => {
@@ -122,6 +128,41 @@ export function PagePicker() {
             )
           })
         )}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+          Add page manually (always works)
+        </div>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={manualId}
+            onChange={(e) => setManualId(e.target.value)}
+            placeholder="Page ID (numbers)"
+            className="flex-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
+          />
+          <input
+            value={manualName}
+            onChange={(e) => setManualName(e.target.value)}
+            placeholder="Name (optional)"
+            className="flex-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              addManualPage(manualId, manualName)
+              setManualId('')
+              setManualName('')
+            }}
+            className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white"
+          >
+            Add
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-[var(--muted)]">
+          Tip: open your page → About / Page transparency, or look at the URL{' '}
+          <code>profile.php?id=XXXXXXXX</code>.
+        </p>
       </div>
 
       {selectedIds.length > 0 && (

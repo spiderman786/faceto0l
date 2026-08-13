@@ -1,4 +1,4 @@
-Faceto0l Chrome extension — v0.3.2
+Faceto0l Chrome extension — v0.3.3
 ==================================
 
 Download:
