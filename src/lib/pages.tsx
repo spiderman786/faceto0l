@@ -75,17 +75,20 @@ export function PagesProvider({ children }: { children: ReactNode }) {
       try {
         const res = await listPagesFromExtension(force)
         if (req !== reqRef.current) return
-        if (!res.ok) {
-          setError(res.error || 'Failed to list pages')
-          setPages(loadManual())
-          return
-        }
+      setError(null)
+        setWarning(res.warning || null)
+        setSource(res.source || null)
         const next = mergePages(loadManual(), Array.isArray(res.pages) ? res.pages : [])
         setPages(next)
-        setWarning(res.warning || (next.length ? null : 'No pages found yet — add a Page ID manually.'))
-        setSource(res.source || null)
+        if (!next.length) {
+          setError(
+            res.error ||
+              'Auto-fetch returned 0 pages. Open facebook.com (logged in), then click Refresh pages again.',
+          )
+        } else {
+          setError(null)
+        }
         setSelectedIds((prev) => prev.filter((id) => next.some((p) => p.id === id)))
-        setError(null)
       } catch (err) {
         if (req !== reqRef.current) return
         setError(err instanceof Error ? err.message : String(err))

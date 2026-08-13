@@ -1,9 +1,4 @@
 const FACEBOOK_URL = 'https://www.facebook.com'
-const PAGES_URLS = [
-  'https://www.facebook.com/pages/?category=your_pages',
-  'https://www.facebook.com/pages/?category=liked&ref=bookmarks',
-  'https://business.facebook.com/settings/pages',
-]
 const PAGES_CACHE_KEY = 'faceto0l_pages'
 const PAGES_CACHE_AT = 'faceto0l_pages_at'
 
@@ -170,96 +165,220 @@ async function scrapePagesFromTab(tabId) {
   }
 }
 
+/** Runs inside a Facebook tab — cookies included. Uses Graph /me/accounts. */
+async function fetchAccountsInPage() {
+  const html = document.documentElement?.innerHTML || ''
+  const tokenMatchers = [
+    /"accessToken"\s*:\s*"(EAA[A-Za-z0-9]+)"/,
+    /access_token=(EAA[A-Za-z0-9]+)/,
+    /"access_token"\s*:\s*"(EAA[A-Za-z0-9]+)"/,
+    /\["AccessToken","(EAA[A-Za-z0-9]+)"\]/,
+  ]
+  let token = null
+  for (const re of tokenMatchers) {
+    const m = html.match(re)
+    if (m?.[1]) {
+      token = m[1]
+      break
+    }
+  }
+  if (!token) return { pages: [], error: 'no_token' }
+
+  const urls = [
+    `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&limit=200&access_token=${encodeURIComponent(token)}`,
+    `https://graph.facebook.com/v18.0/me/accounts?fields=id,name&limit=200&access_token=${encodeURIComponent(token)}`,
+  ]
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { credentials: 'omit' })
+      const data = await res.json()
+      if (Array.isArray(data?.data) && data.data.length) {
+        return {
+          pages: data.data.map((p) => ({
+            id: String(p.id),
+            name: p.name || `Page ${p.id}`,
+          })),
+          source: 'graph',
+          tokenFound: true,
+        }
+      }
+      if (data?.error) {
+        return { pages: [], error: data.error.message || 'graph_error', tokenFound: true }
+      }
+    } catch (err) {
+      // try next
+    }
+  }
+  return { pages: [], error: 'graph_empty', tokenFound: true }
+}
+
+async function ensureFacebookTab() {
+  const existing = await chrome.tabs.query({
+    url: ['*://www.facebook.com/*', '*://*.facebook.com/*', '*://business.facebook.com/*'],
+  })
+  const usable = existing.find((t) => t.id && t.url && !/chrome:|edge:/.test(t.url))
+  if (usable?.id) return { tabId: usable.id, created: false, prevId: null }
+
+  const prev = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+  const tab = await chrome.tabs.create({
+    url: 'https://www.facebook.com/',
+    active: true,
+  })
+  await waitForTabComplete(tab.id, 30000)
+  await sleep(3000)
+  return { tabId: tab.id, created: true, prevId: prev?.id || null }
+}
+
+async function listPagesViaGraph(tabId) {
+  try {
+    const injected = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: fetchAccountsInPage,
+    })
+    return injected?.[0]?.result || { pages: [], error: 'inject_failed' }
+  } catch (err) {
+    return { pages: [], error: String(err) }
+  }
+}
+
+async function listPagesViaBusinessTab() {
+  const prev = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+  const tab = await chrome.tabs.create({
+    url: 'https://business.facebook.com/settings/pages?business_id=0',
+    active: true,
+  })
+  try {
+    await waitForTabComplete(tab.id, 35000)
+    await sleep(4000)
+    // Try graph token on business domain page
+    let graph = await listPagesViaGraph(tab.id)
+    if (graph.pages?.length) return { pages: graph.pages, source: 'business-graph' }
+
+    // Fallback scrape
+    const scraped = await scrapePagesFromTab(tab.id)
+    if (scraped.length) return { pages: scraped, source: 'business-scrape' }
+
+    // One more: classic pages manager
+    await chrome.tabs.update(tab.id, {
+      url: 'https://www.facebook.com/pages/?category=your_pages',
+    })
+    await waitForTabComplete(tab.id, 35000)
+    await sleep(4000)
+    graph = await listPagesViaGraph(tab.id)
+    if (graph.pages?.length) return { pages: graph.pages, source: 'pages-graph' }
+    const scraped2 = await scrapePagesFromTab(tab.id)
+    return {
+      pages: scraped2,
+      source: 'pages-scrape',
+      warning: scraped2.length
+        ? undefined
+        : graph.error
+          ? `Auto-fetch issue: ${graph.error}`
+          : undefined,
+    }
+  } finally {
+    if (tab.id) chrome.tabs.remove(tab.id).catch(() => {})
+    if (prev?.id) chrome.tabs.update(prev.id, { active: true }).catch(() => {})
+  }
+}
+
 async function listPages({ force = false } = {}) {
   const session = await getFacebookSession()
   if (!session.connected) {
-    return { ok: false, error: 'Facebook Disconnected', pages: [] }
+    return { ok: false, error: 'Facebook Disconnected — log into Facebook in this Chrome first.', pages: [] }
   }
 
   if (!force) {
     const stored = await chrome.storage.local.get([PAGES_CACHE_KEY, PAGES_CACHE_AT])
     const cached = stored[PAGES_CACHE_KEY]
     const at = stored[PAGES_CACHE_AT] || 0
-    if (Array.isArray(cached) && cached.length && Date.now() - at < 5 * 60 * 1000) {
+    if (Array.isArray(cached) && cached.length && Date.now() - at < 10 * 60 * 1000) {
       return { ok: true, pages: cached, source: 'cache' }
     }
   }
 
-  // Prefer already-open Facebook tabs first (fast)
-  const existing = await chrome.tabs.query({
-    url: ['*://www.facebook.com/*', '*://*.facebook.com/*', '*://business.facebook.com/*'],
-  })
-  for (const tab of existing) {
-    if (!tab.id) continue
-    try {
-      const pages = await scrapePagesFromTab(tab.id)
-      if (pages.length) {
-        await chrome.storage.local.set({
-          [PAGES_CACHE_KEY]: pages,
-          [PAGES_CACHE_AT]: Date.now(),
-        })
-        return { ok: true, pages, source: 'open-tab' }
-      }
-    } catch (err) {
-      console.warn('[faceto0l] scrape open tab failed', err)
+  let pages = []
+  let source = 'none'
+  let warning
+
+  // 1) Graph API from an existing / fresh Facebook tab (auto, reliable)
+  const fbTab = await ensureFacebookTab()
+  try {
+    const graph = await listPagesViaGraph(fbTab.tabId)
+    if (graph.pages?.length) {
+      pages = graph.pages
+      source = 'graph'
+    } else if (graph.error && graph.error !== 'no_token') {
+      warning = `Graph: ${graph.error}`
+    }
+  } finally {
+    if (fbTab.created && fbTab.tabId) {
+      chrome.tabs.remove(fbTab.tabId).catch(() => {})
+    }
+    if (fbTab.created && fbTab.prevId) {
+      chrome.tabs.update(fbTab.prevId, { active: true }).catch(() => {})
     }
   }
 
-  // Facebook often won't fully render inactive tabs — open pages manager focused
-  const prev = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
-  let best = []
-  let source = 'pages-tab'
-
-  for (const url of PAGES_URLS) {
-    const tab = await chrome.tabs.create({ url, active: true })
+  // 2) Business / pages manager auto path
+  if (!pages.length) {
     try {
-      await waitForTabComplete(tab.id, 35000)
-      await sleep(4500)
-      // nudge lazy load
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: async () => {
-            window.scrollBy(0, 1200)
-            await new Promise((r) => setTimeout(r, 800))
-            window.scrollBy(0, 1200)
-          },
-        })
-      } catch {
-        // ignore
+      const alt = await listPagesViaBusinessTab()
+      if (alt.pages?.length) {
+        pages = alt.pages
+        source = alt.source
+      } else if (alt.warning) {
+        warning = alt.warning
       }
-      await sleep(1500)
-      const pages = await scrapePagesFromTab(tab.id)
-      if (pages.length > best.length) {
-        best = pages
-        source = url.includes('business') ? 'business-settings' : 'pages-tab'
-      }
-      if (best.length >= 1) break
     } catch (err) {
-      console.warn('[faceto0l] pages url failed', url, err)
-    } finally {
-      if (tab.id) chrome.tabs.remove(tab.id).catch(() => {})
+      warning = String(err)
     }
   }
 
-  if (prev?.id) {
-    chrome.tabs.update(prev.id, { active: true }).catch(() => {})
+  // 3) Scrape any open FB tabs last
+  if (!pages.length) {
+    const existing = await chrome.tabs.query({
+      url: ['*://www.facebook.com/*', '*://*.facebook.com/*', '*://business.facebook.com/*'],
+    })
+    for (const tab of existing) {
+      if (!tab.id) continue
+      const scraped = await scrapePagesFromTab(tab.id)
+      if (scraped.length) {
+        pages = scraped
+        source = 'open-tab-scrape'
+        break
+      }
+    }
   }
 
-  if (best.length) {
+  // Dedupe
+  const map = new Map()
+  for (const p of pages) {
+    if (!p?.id) continue
+    map.set(String(p.id), { id: String(p.id), name: p.name || `Page ${p.id}` })
+  }
+  pages = [...map.values()]
+
+  if (pages.length) {
     await chrome.storage.local.set({
-      [PAGES_CACHE_KEY]: best,
+      [PAGES_CACHE_KEY]: pages,
       [PAGES_CACHE_AT]: Date.now(),
     })
   }
 
   return {
-    ok: true,
-    pages: best,
+    ok: pages.length > 0,
+    pages,
     source,
     warning:
-      best.length === 0
-        ? 'No pages auto-detected. Open facebook.com/pages (Your pages), then Refresh — or add a Page ID manually below.'
+      pages.length === 0
+        ? warning ||
+          'Could not auto-fetch pages. Open facebook.com while logged in, click Refresh pages once, or add Page ID manually.'
+        : undefined,
+    error:
+      pages.length === 0
+        ? 'No Facebook pages returned for this account (or token blocked). Try Refresh again after opening facebook.com/pages.'
         : undefined,
   }
 }
