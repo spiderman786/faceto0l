@@ -4,6 +4,6 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/auth/:action", "destination": "/api/auth?action=:action" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|extension/).*)", "destination": "/index.html" }
   ]
 }

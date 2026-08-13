@@ -54,13 +54,9 @@ export function DashboardLayout() {
         {!installed && (
           <div className="border-b border-blue-100 bg-blue-50 px-3 py-3 text-xs text-blue-900">
             Extension not installed.{' '}
-            <a className="font-semibold underline" href="/extension/faceto0l-extension.zip" download>
-              Download
-            </a>
-            {' · '}
-            <a className="underline" href="/extension/README.txt">
-              Install steps
-            </a>
+            <Link className="font-semibold underline" to="/install">
+              Download from website
+            </Link>
           </div>
         )}
 
@@ -190,13 +186,12 @@ export function DashboardLayout() {
                 Open Facebook
               </button>
             )}
-            <a
-              href="/extension/faceto0l-extension.zip"
-              download
+            <Link
+              to="/install"
               className="rounded-full bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white"
             >
               Download extension
-            </a>
+            </Link>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">

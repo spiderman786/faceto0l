@@ -15,8 +15,11 @@ export function LandingPage() {
           </div>
         </div>
         <nav className="flex items-center gap-3 text-sm">
-          <a className="hidden text-[var(--muted)] hover:text-[var(--ink)] sm:inline" href="#tools">
-            Explore tools
+          <Link className="hidden text-[var(--muted)] hover:text-[var(--ink)] sm:inline" to="/install">
+            Extension
+          </Link>
+          <a className="hidden text-[var(--muted)] hover:text-[var(--ink)] md:inline" href="#tools">
+            Tools
           </a>
           <Link
             className="rounded-full border border-[var(--line)] bg-white/80 px-4 py-2 text-[var(--ink)] transition hover:border-[var(--brand)]"
@@ -54,16 +57,16 @@ export function LandingPage() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 className="rounded-full bg-[var(--brand)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:bg-[var(--brand-dark)]"
+                to="/install"
+              >
+                Download extension
+              </Link>
+              <Link
+                className="rounded-full border border-[var(--line)] bg-white px-6 py-3 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--brand)]"
                 to="/register"
               >
                 Start free today
               </Link>
-              <a
-                className="rounded-full border border-[var(--line)] bg-white px-6 py-3 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--brand)]"
-                href="#tools"
-              >
-                Explore tools
-              </a>
             </div>
           </div>
         </section>
@@ -126,13 +129,12 @@ export function LandingPage() {
                 title: 'Install extension',
                 body: 'Download the Faceto0l Chrome ZIP, unzip, then Load unpacked on chrome://extensions.',
                 cta: (
-                  <a
-                    href="/extension/faceto0l-extension.zip"
-                    download
+                  <Link
+                    to="/install"
                     className="mt-3 inline-block text-sm font-semibold text-[var(--brand)] underline"
                   >
                     Download extension (v0.3.2)
-                  </a>
+                  </Link>
                 ),
               },
               {
@@ -163,9 +165,9 @@ export function LandingPage() {
             >
               Start free today
             </Link>
-            <a href="/extension/README.txt" className="text-sm font-semibold text-[var(--muted)] underline">
+            <Link to="/install" className="text-sm font-semibold text-[var(--muted)] underline">
               Install steps
-            </a>
+            </Link>
           </div>
         </section>
       </main>

@@ -75,13 +75,9 @@ export function ToolShellPage() {
           {!installed ? (
             <>
               Extension Not Connected.{' '}
-              <a className="font-semibold underline" href="/extension/faceto0l-extension.zip" download>
-                Download extension
-              </a>
-              {' · '}
-              <a className="underline" href="/extension/README.txt">
-                Install steps
-              </a>
+              <Link className="font-semibold underline" to="/install">
+                Download from website
+              </Link>
             </>
           ) : (
             <>
